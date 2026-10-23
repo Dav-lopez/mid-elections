@@ -17,7 +17,7 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Compile application
-        run: python -m compileall -q app.py civicpulse_core.py civicpulse_client.py civicpulse_registry.py civicpulse_map.py civicpulse_explorer.py civicpulse_polling.py civicpulse_disk_cache.py
+        run: python -m compileall -q app.py civicpulse_core.py civicpulse_client.py civicpulse_registry.py civicpulse_map.py civicpulse_explorer.py civicpulse_polling.py civicpulse_disk_cache.py scripts/monitor_deployment.py
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
       - name: Start headless Streamlit and check server health
