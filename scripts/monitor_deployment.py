@@ -14,6 +14,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from civicpulse_core import FeedValidationError, parse_feed
+from civicpulse_source_audit import audit_feed_keys
 
 DEFAULT_SOURCE = "https://openamerica.io/elections/results.json"
 MAX_RESPONSE_BYTES = 8_000_000
@@ -70,7 +71,7 @@ def check_feed(office: str, source: str, opener=urlopen) -> Check:
         body = _read(_feed_url(source, office), "application/json", opener)
         payload = json.loads(body)
         feed = parse_feed(payload, office)
-        detail = "API v1 valid; no race-coverage guarantee"
+        detail = "API v1 valid; no race-coverage guarantee; " + audit_feed_keys(feed).detail
         if feed.stale:
             detail += "; provider marks data stale"
         return Check(office, "PASS", detail)
