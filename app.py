@@ -9,7 +9,8 @@ import requests
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
-from civicpulse_core import FeedValidationError, normalize_race, parse_feed, refresh_seconds
+from civicpulse_core import (FeedValidationError, coverage_status, national_coverage_metrics,
+                             normalize_race, parse_feed, refresh_seconds)
 
 st.set_page_config(page_title="CivicPulse | Election Results", page_icon="🗳️", layout="wide",
                    initial_sidebar_state="expanded")
@@ -96,7 +97,8 @@ with st.sidebar:
     chosen_chamber = st.selectbox("Chamber", ["Both", "House", "Senate"])
     chosen_state = st.selectbox("State", ["All states"] + STATES)
     chosen_coverage = st.selectbox("Coverage", ["All", "Results reported", "Listed, no votes yet",
-                                               "Not available from this provider"])
+                                               "State not supported by provider",
+                                               "Race absent from provider feed", "Source unavailable"])
     search = st.text_input("Find district or candidate", placeholder="e.g. TX-23")
     if st.button("Check source now", use_container_width=True):
         fetch_feed.clear()
@@ -110,12 +112,16 @@ for seat in registry():
     feed = feed_lookup[seat["Chamber"]]
     found = feed.races.get(seat["Seat"]) if feed else None
     health = feed.status if feed else "Feed unavailable"
-    rows.append(normalize_race(seat["Chamber"], seat["State"], seat["Seat"], found,
-                               health, feed.as_of if feed else None))
+    row = normalize_race(seat["Chamber"], seat["State"], seat["Seat"], found,
+                         health, feed.as_of if feed else None)
+    if found is None:
+        row["Coverage"] = coverage_status(seat["State"], feed is not None, False)
+    rows.append(row)
 
 frame = pd.DataFrame([{k: v for k, v in row.items() if k != "candidates"} for row in rows])
-reported = int((frame["Coverage"] == "Results reported").sum())
-listed = int((frame["Coverage"] != "Not available from this provider").sum())
+metrics = national_coverage_metrics(rows)
+reported = metrics["reported"]
+listed = metrics["listed"]
 overview, explorer, sources = st.tabs(["Overview", "Race explorer", "Data & methodology"])
 
 with overview:
@@ -124,6 +130,8 @@ with overview:
     b.metric("Regular Senate contests", len(SENATE_2026))
     c.metric("Races with votes", reported)
     d.metric("Races included in feed", listed)
+    st.caption(f"Unsupported-state contests: {metrics['provider_unsupported']} · "
+               f"Feed unavailable for {metrics['source_unavailable']} contests")
     st.markdown('<div class="callout">Missing vote counts are not zero. A vote leader is not a winner. '
                 'Source precinct completion does not mean certified election results.</div>',
                 unsafe_allow_html=True)
@@ -186,9 +194,9 @@ with sources:
     st.write("**Refresh:** The site checks every 60 seconds when any feed is live, "
              "every 10 minutes before counting, and every 15 minutes when counting is no longer live. "
              "Failures trigger a slower retry. The provider may update less frequently.")
-    st.write("**Coverage:** Not all 50 states provide compatible public feeds. "
-             "Unlisted races are explicitly labeled unavailable from this provider. "
-             "An unavailable feed is treated as an error, not as proof no race was reported.")
+    st.write("**Coverage:** The source currently documents 22 participating states. "
+             "Unsupported states, supported states with no race entry, and source outages "
+             "are separately labeled. An absent result does not mean zero votes.")
     st.write("**Election scope:** 435 House districts and 33 regularly scheduled Senate contests; "
              "special elections require separate integration.")
     st.write("**Certification:** Reporting 100% of precincts is not legal certification. "
