@@ -9,6 +9,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 from civicpulse_client import ElectionFeedClient
+from civicpulse_polling import fetch_offices
 from civicpulse_map import STATUS_LABELS, STATUS_COLORS, state_coverage
 from civicpulse_explorer import candidate_vote_rows, state_contests
 from civicpulse_registry import HOUSE, SENATE_2026, SENATE_SPECIAL_2026, STATES, registry
@@ -54,10 +55,8 @@ def get_feed_client() -> ElectionFeedClient:
 
 client = get_feed_client()
 force_refresh = st.session_state.pop("force_refresh", False)
-house_snapshot = client.fetch("House", force=force_refresh)
-senate_snapshot = client.fetch("Senate", force=force_refresh)
-snapshots = {"House": house_snapshot, "Senate": senate_snapshot}
-house, senate = house_snapshot.feed, senate_snapshot.feed
+snapshots = fetch_offices(client, force=force_refresh)
+house, senate = snapshots["House"].feed, snapshots["Senate"].feed
 feeds = [house, senate]
 errors = [f"{office}: {snapshot.error}" for office, snapshot in snapshots.items() if snapshot.error]
 poll_seconds = refresh_seconds(feeds, failures=1 if errors else 0)
