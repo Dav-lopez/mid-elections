@@ -265,7 +265,10 @@ with sources:
              "An HTTP failure is not evidence of zero votes or absent coverage.")
     st.write("**HTTP caching:** A process-shared cache sends ETag conditional requests and reuses "
              "validated results on HTTP 304. On errors it retains the last validated snapshot "
-             "with a warning and a real check timestamp. Cache is lost when the server restarts.")
+             "with a warning and a real check timestamp. A validated local disk snapshot can " 
+             "be recovered after a process restart if its filesystem persists and it is " 
+             "at most 72 hours old; it is never treated as freshly verified until rechecked. " 
+             "Cloud redeploys or instance replacement may discard the local cache.")
     st.write("**Timestamps:** The feed as-of value is the newest state update anywhere in that office feed, "
              "not necessarily the update time of the selected race.")
     st.write("**Election scope:** 435 House districts, 33 regular Senate contests, and two Senate specials (FL, OH). "
