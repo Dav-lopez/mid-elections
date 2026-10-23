@@ -1,5 +1,6 @@
 """Unit tests for conditional requests, backoff and last-known-good snapshots."""
 import unittest
+import threading
 from datetime import datetime, timezone
 
 import requests
@@ -142,6 +143,62 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(client.fetch("Senate").feed.office, "Senate")
         self.assertEqual(len(session.calls), 2)
 
+
+    def test_manual_force_cannot_bypass_backoff(self):
+        session = Session(Response(data=payload()), requests.Timeout("offline"))
+        client = self.client(session)
+        client.fetch("House")
+        self.t = 60
+        failed = client.fetch("House")
+        for _ in range(20):
+            self.assertIs(client.fetch("House", force=True), failed)
+        self.assertEqual(len(session.calls), 2)
+
+    def test_manual_force_obeys_minimum_gap(self):
+        session = Session(Response(data=payload()), Response(data=payload()))
+        client = self.client(session)
+        first = client.fetch("House")
+        self.t = 30
+        for _ in range(20):
+            self.assertIs(client.fetch("House", force=True), first)
+        self.assertEqual(len(session.calls), 1)
+        self.t = 60
+        client.fetch("House", force=True)
+        self.assertEqual(len(session.calls), 2)
+
+    def test_other_office_does_not_wait_for_blocked_request(self):
+        entered = threading.Event()
+        release = threading.Event()
+
+        class SlowSession:
+            def get(self, url, **kwargs):
+                office = kwargs["params"]["office"]
+                if office == "House":
+                    entered.set()
+                    if not release.wait(timeout=4):
+                        raise requests.Timeout("timed out in test")
+                return Response(data=payload(office=office))
+
+        client = self.client(SlowSession())
+        thread = threading.Thread(target=lambda: client.fetch("House"))
+        thread.start()
+        try:
+            self.assertTrue(entered.wait(timeout=2))
+            done = threading.Event()
+
+            def query_senate():
+                client.fetch("Senate")
+                done.set()
+
+            senate = threading.Thread(target=query_senate)
+            senate.start()
+            self.assertTrue(done.wait(timeout=1), "Senate must not wait for House")
+            senate.join(timeout=2)
+            pending = client.fetch("House")
+            self.assertIn("in progress", pending.error.lower())
+        finally:
+            release.set()
+            thread.join(timeout=2)
 
 if __name__ == "__main__":
     unittest.main()
