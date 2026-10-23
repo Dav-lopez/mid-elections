@@ -72,7 +72,7 @@ python -m compileall -q app.py civicpulse_core.py civicpulse_client.py civicpuls
 python -m unittest discover -s tests -v
 ```
 
-GitHub Actions runs compilation and unit tests on feature pushes and pull requests. Mocked HTTP tests cover conditional requests, timeouts, backoff, and recovery. Pure tests cover registry completeness, map aggregation, state navigation, and candidate vote filtering. These checks **do not** establish live provider availability, actual election-night performance, or browser-level accessibility.
+GitHub Actions runs compilation, unit tests, and Streamlit AppTest script execution on feature pushes and pull requests. AppTest exercises an empty-but-valid source and a provider outage with deterministic fixtures, detecting runtime script failures that a server health endpoint alone can miss. Mocked HTTP tests cover conditional requests, timeouts, backoff, and recovery. Pure tests cover registry completeness, map aggregation, state navigation, and candidate vote filtering. These checks **do not** establish live provider availability, actual election-night performance, visual responsiveness, or browser-level accessibility.
 
 ## Responsible use and limitations
 
