@@ -1,0 +1,85 @@
+name: Five-minute PR merge watcher
+
+# GitHub scheduled workflows can be delayed under load.
+# This reports PR status; it does NOT run an AI coding agent or merge PRs.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: civicpulse-pr-watch
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR status and recent merges
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          python - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          import urllib.request
+
+          repo = os.environ["REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": "Bearer " + token,
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "CivicPulse-PR-watcher",
+          }
+
+          def get(path):
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{repo}/{path}", headers=headers
+              )
+              with urllib.request.urlopen(req, timeout=20) as response:
+                  return json.load(response)
+
+          open_prs = get("pulls?state=open&per_page=100")
+          closed = get("pulls?state=closed&per_page=30")
+          now = dt.datetime.now(dt.timezone.utc)
+          merged = [p for p in closed if p.get("merged_at")]
+          recent = []
+          for pr in merged:
+              merged_at = dt.datetime.fromisoformat(
+                  pr["merged_at"].replace("Z", "+00:00")
+              )
+              if dt.timedelta(0) <= now - merged_at <= dt.timedelta(minutes=15):
+                  recent.append(pr)
+
+          report = [
+              "# CivicPulse PR merge watcher",
+              f"- Checked: {now.isoformat(timespec='seconds')}",
+              f"- Open PRs: {len(open_prs)}",
+              f"- Recent merges (15-minute window): {len(recent)}",
+              "",
+              "## Open PRs",
+          ]
+          report += [
+              f"- #{pr['number']}: {pr['title']} — {pr['html_url']}"
+              for pr in open_prs
+          ] or ["- None"]
+          report += ["", "## Recent merges"]
+          report += [
+              f"- #{pr['number']}: {pr['title']} — {pr['html_url']}"
+              for pr in recent
+          ] or ["- None"]
+          summary = "\n".join(report) + "\n"
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
+              out.write(summary)
+          print(summary)
+          PY
