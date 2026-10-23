@@ -2,15 +2,13 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
-
 import pandas as pd
-import requests
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
-from civicpulse_core import (FeedValidationError, coverage_status, national_coverage_metrics,
-                             normalize_race, parse_feed, refresh_seconds)
+from civicpulse_client import ElectionFeedClient
+from civicpulse_core import (PROVIDER_STATES, coverage_status, national_coverage_metrics,
+                             normalize_race, refresh_seconds)
 
 st.set_page_config(page_title="CivicPulse | Election Results", page_icon="🗳️", layout="wide",
                    initial_sidebar_state="expanded")
@@ -64,23 +62,22 @@ def registry() -> list[dict]:
     return entries
 
 
-@st.cache_data(ttl=60, show_spinner=False)
-def fetch_feed(chamber: str):
-    try:
-        result = requests.get(API_URL, params={"year": 2026, "office": chamber},
-                              timeout=(5, 15), headers={"Accept": "application/json",
-                              "Accept-Encoding": "gzip", "User-Agent": "CivicPulse/3.0 (election viewer)"})
-        result.raise_for_status()
-        return parse_feed(result.json(), chamber), None
-    except (requests.RequestException, ValueError, FeedValidationError) as exc:
-        return None, str(exc)
+@st.cache_resource
+def get_feed_client() -> ElectionFeedClient:
+    """Share the HTTP cache across viewers within one Streamlit server process."""
+    return ElectionFeedClient(API_URL)
 
 
-house, house_error = fetch_feed("House")
-senate, senate_error = fetch_feed("Senate")
+client = get_feed_client()
+force_refresh = st.session_state.pop("force_refresh", False)
+house_snapshot = client.fetch("House", force=force_refresh)
+senate_snapshot = client.fetch("Senate", force=force_refresh)
+snapshots = {"House": house_snapshot, "Senate": senate_snapshot}
+house, senate = house_snapshot.feed, senate_snapshot.feed
 feeds = [house, senate]
-errors = [message for message in [house_error, senate_error] if message]
+errors = [f"{office}: {snapshot.error}" for office, snapshot in snapshots.items() if snapshot.error]
 poll_seconds = refresh_seconds(feeds, failures=1 if errors else 0)
+
 st_autorefresh(interval=poll_seconds * 1000, key="civicpulse_poll")
 
 st.markdown("""<section class="hero"><div class="eyebrow">CivicPulse / public election information</div>
@@ -90,8 +87,7 @@ state returns where available. No forecasts, inferred winners, or fabricated vot
 <span class="pill">Election Day · November 3, 2026</span>
 <span class="pill">Source-aware refresh</span></section>""", unsafe_allow_html=True)
 
-statuses = [f"{feed.office}: {feed.status}" if feed else
-            f"{office}: Source unavailable" for office, feed in [("House", house), ("Senate", senate)]]
+statuses = [f"{office}: {snapshot.status}" for office, snapshot in snapshots.items()]
 with st.sidebar:
     st.header("Explore races")
     chosen_chamber = st.selectbox("Chamber", ["Both", "House", "Senate"])
@@ -101,7 +97,7 @@ with st.sidebar:
                                                "Race absent from provider feed", "Source unavailable"])
     search = st.text_input("Find district or candidate", placeholder="e.g. TX-23")
     if st.button("Check source now", use_container_width=True):
-        fetch_feed.clear()
+        st.session_state["force_refresh"] = True
         st.rerun()
     st.caption(f"Next automatic source check: roughly {poll_seconds // 60} minute(s)")
     st.caption("This is an independent, nonpartisan information service.")
@@ -111,9 +107,9 @@ rows = []
 for seat in registry():
     feed = feed_lookup[seat["Chamber"]]
     found = feed.races.get(seat["Seat"]) if feed else None
-    health = feed.status if feed else "Feed unavailable"
+    snapshot = snapshots[seat["Chamber"]]
     row = normalize_race(seat["Chamber"], seat["State"], seat["Seat"], found,
-                         health, feed.as_of if feed else None)
+                         snapshot.status, feed.as_of if feed else None)
     if found is None:
         row["Coverage"] = coverage_status(seat["State"], feed is not None, False)
     rows.append(row)
@@ -136,13 +132,13 @@ with overview:
                 'Source precinct completion does not mean certified election results.</div>',
                 unsafe_allow_html=True)
     if errors:
-        st.error("One or more source requests failed. Source coverage cannot be assessed reliably until they recover.")
+        st.warning("A provider request failed. Previously validated results, if available, are retained but may be out of date.")
         with st.expander("Source error details"):
             for message in errors:
                 st.code(message)
     for message in statuses:
         st.info(message)
-    st.caption("Numbers reflect this provider's limited coverage; these are not national vote or seat totals.")
+    st.caption(f"Source adapters: {len(PROVIDER_STATES)} states; a state adapter does not guarantee a race has appeared. These are not national vote or seat totals.")
     source_update = [f"{feed.office}: {feed.as_of or 'Not yet published'}"
                      for feed in feeds if feed is not None]
     if source_update:
@@ -162,8 +158,9 @@ with explorer:
                  any(needle in candidate["Candidate"].casefold() for candidate in r["candidates"])}
         filtered = filtered[filtered["Seat"].isin(seats)]
     st.subheader("Find a race")
-    st.caption(f"{len(filtered):,} matching contests · Last app check: "
-               f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+    checks = " | ".join(f"{office}: {snapshot.checked_at.strftime('%Y-%m-%d %H:%M UTC')}"
+                        for office, snapshot in snapshots.items())
+    st.caption(f"{len(filtered):,} matching contests · Last HTTP attempts: {checks}")
     st.dataframe(filtered, hide_index=True, use_container_width=True,
                  column_config={"Votes": st.column_config.NumberColumn(format="%d"),
                                 "Precincts (%)": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%")})
@@ -177,7 +174,7 @@ with explorer:
         detail = next(r for r in rows if (r["Chamber"], r["Seat"]) == selection)
         st.subheader(f"{detail['Chamber']} · {detail['Seat']}")
         st.caption(f"{detail['Coverage']} · {detail['Feed health']} · "
-                   f"Publisher timestamp: {detail['Source timestamp']}")
+                   f"Feed as-of (latest update across races): {detail['Feed as-of (UTC)']}")
         if detail["candidates"]:
             candidates = pd.DataFrame(detail["candidates"])
             st.dataframe(candidates, hide_index=True, use_container_width=True)
@@ -191,12 +188,18 @@ with sources:
     st.subheader("Transparency and source status")
     st.write("**Provider:** [Open America election results](https://openamerica.io/elections/api/). "
              "The feed integrates official returns from participating states and does not call races.")
-    st.write("**Refresh:** The site checks every 60 seconds when any feed is live, "
-             "every 10 minutes before counting, and every 15 minutes when counting is no longer live. "
-             "Failures trigger a slower retry. The provider may update less frequently.")
-    st.write("**Coverage:** The source currently documents 22 participating states. "
-             "Unsupported states, supported states with no race entry, and source outages "
-             "are separately labeled. An absent result does not mean zero votes.")
+    st.write("**Refresh:** While a feed is live it is checked every 60 seconds; before counting, "
+             "every 10 minutes; when counting but not live, every 15 minutes. "
+             "Failures use exponential backoff up to 10 minutes. The provider may update less frequently.")
+    st.write(f"**Coverage:** The provider documents adapters for {len(PROVIDER_STATES)} states: "
+             + ", ".join(sorted(PROVIDER_STATES)) + ". "
+             "An unsupported state is different from a supported state whose race has not appeared. "
+             "An HTTP failure is not evidence of zero votes or absent coverage.")
+    st.write("**HTTP caching:** A process-shared cache sends ETag conditional requests and reuses "
+             "validated results on HTTP 304. On errors it retains the last validated snapshot "
+             "with a warning and a real check timestamp. Cache is lost when the server restarts.")
+    st.write("**Timestamps:** The feed as-of value is the newest state update anywhere in that office feed, "
+             "not necessarily the update time of the selected race.")
     st.write("**Election scope:** 435 House districts and 33 regularly scheduled Senate contests; "
              "special elections require separate integration.")
     st.write("**Certification:** Reporting 100% of precincts is not legal certification. "
