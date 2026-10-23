@@ -9,6 +9,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 from civicpulse_client import ElectionFeedClient
+from civicpulse_disk_cache import DiskFeedCache
 from civicpulse_polling import fetch_offices
 from civicpulse_map import STATUS_LABELS, STATUS_COLORS, state_coverage
 from civicpulse_explorer import candidate_vote_rows, state_contests
@@ -50,7 +51,8 @@ st.markdown(CSS, unsafe_allow_html=True)
 @st.cache_resource
 def get_feed_client() -> ElectionFeedClient:
     """Share the HTTP cache across viewers within one Streamlit server process."""
-    return ElectionFeedClient(API_URL)
+    return ElectionFeedClient(API_URL, disk_cache=DiskFeedCache(
+        os.getenv('CIVICPULSE_CACHE_DIR', '.civicpulse-cache'), API_URL))
 
 
 client = get_feed_client()
