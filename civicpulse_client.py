@@ -7,7 +7,6 @@ when the last validated result is still displayed.
 from __future__ import annotations
 
 import threading
-import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -57,8 +56,7 @@ class ElectionFeedClient:
         self._snapshots: dict[str, FeedSnapshot] = {}
         self._last_attempt_clock: dict[str, float] = {}
         self._minimum_force_gap = 60
-        self.disk_cache = disk_cache if disk_cache is not None else DiskFeedCache(
-            os.getenv('CIVICPULSE_CACHE_DIR', '.civicpulse-cache'), url)
+        self.disk_cache = disk_cache
         self._restored: set[str] = set()
 
     def fetch(self, office: str, *, force: bool = False) -> FeedSnapshot:
@@ -74,7 +72,7 @@ class ElectionFeedClient:
         try:
             now = self.clock()
             previous = self._snapshots.get(office)
-            if previous is None and office not in self._restored:
+            if self.disk_cache is not None and previous is None and office not in self._restored:
                 self._restored.add(office)
                 restored = self.disk_cache.load(office, self.utcnow())
                 if restored is not None:
@@ -127,13 +125,14 @@ class ElectionFeedClient:
                     response.raise_for_status()
                     feed = parse_feed(response.json(), office)
                     etag = response.headers.get("ETag")
+                if feed is None:
+                    raise ValueError("No validated body available for HTTP 304")
+                if self.disk_cache is not None:
                     try:
                         self.disk_cache.save(feed, checked_at, etag)
                     except OSError:
-                        # No writable disk on some hosted systems; keep in-memory data.
+                        # A read-only filesystem should not take down the live view.
                         pass
-                if feed is None:
-                    raise ValueError("No validated body available for HTTP 304")
                 snapshot = FeedSnapshot(
                     feed=feed, error=None, checked_at=checked_at,
                     last_success_at=checked_at, etag=etag,
