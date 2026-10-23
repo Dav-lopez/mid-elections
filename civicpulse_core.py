@@ -126,12 +126,17 @@ def normalize_race(office: str, state: str, seat: str, race: dict | None,
                 "Share (%)": percent(candidate.get("pct")),
             })
     candidates.sort(key=lambda entry: entry["Votes"] if entry["Votes"] is not None else -1, reverse=True)
+    # The published candidate list may be partial (write-ins, omitted candidates,
+    # or delayed reporting). Never manufacture a race-wide total by summing it.
     total = valid_votes(race.get("total"))
-    if total is None and any(c["Votes"] is not None for c in candidates):
-        total = sum(c["Votes"] or 0 for c in candidates)
+    candidate_votes_published = any(
+        candidate["Votes"] is not None and candidate["Votes"] > 0
+        for candidate in candidates
+    )
+    has_reported_votes = (total is not None and total > 0) or candidate_votes_published
     leader = str(race.get("leader") or "—")
     row.update({
-        "Coverage": "Results reported" if total is not None and total > 0 else "Listed, no votes yet",
+        "Coverage": "Results reported" if has_reported_votes else "Listed, no votes yet",
         "Votes": total, "Precincts (%)": percent(race.get("pct_in")),
         "Leader (not winner)": leader,
         "Source call": str(race.get("winner") or "—") if race.get("called") is True else "—",
