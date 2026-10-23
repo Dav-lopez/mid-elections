@@ -1,7 +1,8 @@
 import unittest
 
 from civicpulse_core import (
-    FeedValidationError, normalize_race, parse_feed, percent, refresh_seconds, valid_votes
+    FeedValidationError, coverage_status, national_coverage_metrics,
+    normalize_race, parse_feed, percent, refresh_seconds, valid_votes
 )
 
 
@@ -68,6 +69,33 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(refresh_seconds([live, stale]), 60)
         self.assertEqual(refresh_seconds([stale]), 900)
         self.assertEqual(refresh_seconds([None], failures=5), 600)
+
+
+class CoverageTests(unittest.TestCase):
+    def test_unsupported_state(self):
+        self.assertEqual(coverage_status("CA", True, False), "State not supported by provider")
+
+    def test_supported_state_with_missing_race(self):
+        self.assertEqual(coverage_status("TX", True, False), "Race absent from provider feed")
+
+    def test_outage_takes_precedence(self):
+        self.assertEqual(coverage_status("CA", False, False), "Source unavailable")
+        self.assertEqual(coverage_status("TX", False, False), "Source unavailable")
+
+    def test_race_present(self):
+        self.assertEqual(coverage_status("TX", True, True), "Present in provider feed")
+
+    def test_coverage_metrics(self):
+        rows = [
+            {"Coverage": "Results reported"},
+            {"Coverage": "Listed, no votes yet"},
+            {"Coverage": "State not supported by provider"},
+            {"Coverage": "Race absent from provider feed"},
+            {"Coverage": "Source unavailable"},
+        ]
+        self.assertEqual(national_coverage_metrics(rows), {
+            "reported": 1, "listed": 2, "provider_unsupported": 1, "source_unavailable": 1
+        })
 
 
 if __name__ == "__main__":
