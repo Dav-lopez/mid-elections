@@ -9,7 +9,7 @@ import requests
 
 from civicpulse_client import ElectionFeedClient
 from civicpulse_disk_cache import DiskFeedCache, MAX_AGE
-from tests.test_client import Response, Session, payload
+from test_client import Response, Session, payload
 
 
 class DiskCacheTests(unittest.TestCase):
