@@ -83,8 +83,30 @@ python -m unittest discover -s tests -v
 
 GitHub Actions runs compilation, unit tests, and Streamlit AppTest script execution on feature pushes and pull requests. AppTest exercises an empty-but-valid source and a provider outage with deterministic fixtures, detecting runtime script failures that a server health endpoint alone can miss. Mocked HTTP tests cover conditional requests, timeouts, backoff, and recovery. Pure tests cover registry completeness, map aggregation, state navigation, and candidate vote filtering. These checks **do not** establish live provider availability, actual election-night performance, visual responsiveness, or browser-level accessibility.
 
+## Browser-level smoke tests
+
+CI runs a separate real-Chromium job at **1280px desktop** and **390px mobile**
+against a local synthetic **empty** 2026 House/Senate provider. It checks that
+the app renders its map and state spotlight without Streamlit exceptions, the
+spotlight has an accessible selector, the desktop tabs support keyboard
+activation, and the mobile hero fits the viewport. CI retains desktop/mobile
+screenshots and the server log as short-lived artifacts for inspection.
+
+Run locally after installing Playwright and its Chromium browser:
+
+```bash
+python -m pip install "playwright>=1.55,<2"
+python -m playwright install chromium
+python scripts/browser_smoke.py
+```
+
+This is a smoke test, **not** a full WCAG audit, assistive-technology test,
+mobile-device compatibility certification, live-provider test, or a 100–200
+concurrent-user load test. The screenshots contain only synthetic empty feeds;
+the script never requests real vote data.
+
 ## Responsible use and limitations
 
 Attribute provider data to **official state election offices via Open America** and preserve timestamps. Open America does not provide complete national results coverage. Reporting 100% of precincts is not legal certification. Verify consequential claims with the responsible state election office or [USA.gov's election results guide](https://www.usa.gov/election-results). Contact the provider before repackaging its feed as a standalone commercial results service.
 
-Next priorities: browser accessibility checks, mobile responsiveness, live source reconciliation, load testing, deployment monitoring, and external durable storage.
+Next priorities: a complete WCAG/assistive-technology audit, mobile usability review, live source reconciliation, load testing, deployment monitoring, and external durable storage.
