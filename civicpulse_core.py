@@ -5,7 +5,7 @@ Pure functions in this module are deliberately independent of Streamlit.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -70,6 +70,19 @@ def parse_feed(payload: Any, office: str, year: int = 2026) -> Feed:
         counting=payload["counting"], final=payload["final"],
         as_of=timestamp, source=str(payload.get("source") or "unknown"),
     )
+
+
+def format_feed_timestamp(value: str | None) -> str:
+    """Render provider ISO timestamps in real UTC; never relabel raw offsets."""
+    if not value:
+        return "Not published"
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return f"{value} (timezone unspecified)"
+        return parsed.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    except ValueError:
+        return "Invalid timestamp"
 
 
 def valid_votes(value: Any) -> int | None:
