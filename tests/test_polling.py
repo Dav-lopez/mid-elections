@@ -1,6 +1,8 @@
 """Concurrency regression tests for Streamlit office polling."""
 import threading
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 
 from civicpulse_polling import fetch_offices
 
@@ -49,6 +51,39 @@ class PollingTests(unittest.TestCase):
         client = Client()
         self.assertEqual(list(fetch_offices(client)), ["House", "Senate"])
         self.assertEqual(client.forced, [False, False])
+
+
+    def test_many_viewers_share_only_two_polling_workers(self):
+        """Simulate 120 simultaneous viewer reruns without a thread explosion."""
+        lock = threading.Lock()
+        active = 0
+        peak = 0
+        worker_names = set()
+
+        class Client:
+            def fetch(self, office, *, force=False):
+                nonlocal active, peak
+                with lock:
+                    active += 1
+                    peak = max(peak, active)
+                    worker_names.add(threading.current_thread().name)
+                try:
+                    time.sleep(0.003)
+                    return office
+                finally:
+                    with lock:
+                        active -= 1
+
+        client = Client()
+        with ThreadPoolExecutor(max_workers=40) as viewers:
+            results = list(viewers.map(lambda _: fetch_offices(client), range(120)))
+
+        self.assertTrue(all(result == {"House": "House", "Senate": "Senate"}
+                            for result in results))
+        self.assertLessEqual(peak, 2, "Polling must not create per-viewer workers")
+        self.assertLessEqual(len(worker_names), 2)
+        self.assertTrue(all(name.startswith("civicpulse-poll")
+                            for name in worker_names))
 
 
 if __name__ == "__main__":
