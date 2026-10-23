@@ -1,17 +1,19 @@
+"""CivicPulse v3: source-aware, nonpartisan congressional results viewer."""
 from __future__ import annotations
 
 import os
-import re
 from datetime import datetime, timezone
-from typing import Any
 
 import pandas as pd
 import requests
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
-st.set_page_config(page_title="CivicPulse | 2026 Elections", page_icon="🗳️", layout="wide")
-REFRESH_SECONDS = 60
+from civicpulse_core import FeedValidationError, normalize_race, parse_feed, refresh_seconds
+
+st.set_page_config(page_title="CivicPulse | Election Results", page_icon="🗳️", layout="wide",
+                   initial_sidebar_state="expanded")
+
 API_URL = os.getenv("ELECTION_RESULTS_URL", "https://openamerica.io/elections/results.json")
 HOUSE = {
     "AL": 7, "AK": 1, "AZ": 9, "AR": 4, "CA": 52, "CO": 8, "CT": 5, "DE": 1,
@@ -25,180 +27,171 @@ HOUSE = {
 SENATE_2026 = "AL AK AR CO DE GA ID IL IA KS KY LA ME MA MI MN MS MT NE NH NJ NM NC OK OR RI SC SD TN TX VA WV WY".split()
 STATES = sorted(HOUSE)
 
-st.markdown("""
+CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap');
-html,body,[data-testid="stApp"] {font-family: 'DM Sans',sans-serif;}
-.stApp {background:#f5f8fc;}
-.block-container {max-width:1440px;padding-top:1.3rem;}
-h1,h2,h3 {font-family:'Manrope',sans-serif;letter-spacing:-.035em;color:#14233b;}
-[data-testid="stSidebar"] {background:#fff;border-right:1px solid #e5ebf3;}
-[data-testid="stMetric"] {background:#fff;border:1px solid #e0e8f1;border-radius:17px;padding:18px;box-shadow:0 4px 20px #14233b08;}
-[data-testid="stMetricValue"] {font-family:'Manrope',sans-serif;color:#14233b;}
-.hero {background:linear-gradient(115deg,#14233b,#1e436d 58%,#12676d);border-radius:22px;padding:32px;color:white;margin-bottom:25px;box-shadow:0 14px 32px #1d3d6622;}
-.hero .eyebrow {letter-spacing:.16em;text-transform:uppercase;font-size:.76rem;color:#b0d4e1;font-weight:700;}
-.hero h1 {color:white;font-size:clamp(1.8rem,3vw,2.75rem);margin:.4rem 0;}
-.hero p {color:#e6edf8;max-width:780px;line-height:1.6;margin:0;}
-.pill {display:inline-block;margin-top:18px;padding:7px 11px;border-radius:100px;border:1px solid #ffffff55;color:#ecf5ff;font-size:.82rem;}
-.note {border-left:3px solid #176d78;padding:10px 14px;background:#eef5f8;border-radius:0 8px 8px 0;color:#344b62;font-size:.9rem;}
-a {color:#176d78;}
-@media(max-width:720px){.block-container{padding:1rem .7rem}.hero{padding:22px 18px}}
+html,body,[data-testid="stApp"] {font-family:'DM Sans',sans-serif}
+.stApp {background:#f5f8fc}
+.block-container {max-width:1430px;padding-top:1rem}
+h1,h2,h3 {font-family:'Manrope',sans-serif;letter-spacing:-.035em}
+[data-testid="stSidebar"] {background:#fff;border-right:1px solid #e5ebf3}
+[data-testid="stMetric"] {background:#fff;border:1px solid #e0e8f1;border-radius:16px;padding:17px;box-shadow:0 4px 20px #14233b08}
+[data-testid="stMetricValue"] {color:#14233b;font-family:'Manrope',sans-serif}
+.hero {background:linear-gradient(115deg,#14233b,#1e436d 58%,#12676d);
+border-radius:22px;padding:30px;color:white;margin-bottom:22px;box-shadow:0 14px 32px #1d3d6622}
+.hero .eyebrow {letter-spacing:.15em;text-transform:uppercase;color:#b0d4e1;font-size:.76rem;font-weight:700}
+.hero h1 {color:white;font-size:clamp(1.8rem,3vw,2.8rem);margin:.5rem 0}
+.hero p {color:#e6edf8;max-width:860px;margin:0;line-height:1.65}
+.pill {display:inline-block;border:1px solid #ffffff50;border-radius:100px;padding:6px 12px;
+font-size:.81rem;margin-top:17px;color:#eaf7fe}
+.callout {background:#eaf2f6;color:#304760;border-left:4px solid #176d78;border-radius:0 10px 10px 0;
+padding:14px 17px;margin:14px 0}
+@media(max-width:720px){.block-container{padding:1rem .55rem}.hero{padding:22px 18px}}
 </style>
-""", unsafe_allow_html=True)
+"""
+st.markdown(CSS, unsafe_allow_html=True)
 
 
-def num(v: Any) -> int | None:
-    try:
-        return None if v is None else int(v)
-    except (ValueError, TypeError):
-        return None
-
-
-def pct(v: Any) -> float | None:
-    try:
-        return None if v is None else float(v)
-    except (ValueError, TypeError):
-        return None
-
-
-def registry() -> list[dict[str, Any]]:
-    rows = []
+def registry() -> list[dict]:
+    entries = []
     for state, count in HOUSE.items():
-        for i in range(1, count + 1):
-            seat = f"{state}-{i:02d}" if count > 1 else f"{state}-00"
-            rows.append({"chamber": "House", "state": state, "seat": seat})
+        for district in range(1, count + 1):
+            seat = f"{state}-{district:02d}" if count > 1 else f"{state}-00"
+            entries.append({"Chamber": "House", "State": state, "Seat": seat})
     for state in SENATE_2026:
-        rows.append({"chamber": "Senate", "state": state, "seat": state})
-    return rows
+        entries.append({"Chamber": "Senate", "State": state, "Seat": state})
+    return entries
 
 
-@st.cache_data(ttl=REFRESH_SECONDS, show_spinner=False)
-def fetch(chamber: str) -> tuple[dict[str, dict], str | None, str]:
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_feed(chamber: str):
     try:
-        response = requests.get(API_URL, params={"year": 2026, "office": chamber},
-                                timeout=(5, 15), headers={"Accept": "application/json",
-                                "User-Agent": "CivicPulseElectionDashboard/1.0"})
-        response.raise_for_status()
-        payload = response.json()
-        if not isinstance(payload, dict):
-            raise ValueError("Unexpected response type")
-        races = payload.get("races", {})
-        if not isinstance(races, dict):
-            raise ValueError("Unexpected races schema")
-        return {str(k).upper(): v for k, v in races.items() if isinstance(v, dict)}, str(payload.get("as_of") or ""), ""
-    except (requests.RequestException, ValueError) as error:
-        return {}, None, str(error)
+        result = requests.get(API_URL, params={"year": 2026, "office": chamber},
+                              timeout=(5, 15), headers={"Accept": "application/json",
+                              "Accept-Encoding": "gzip", "User-Agent": "CivicPulse/3.0 (election viewer)"})
+        result.raise_for_status()
+        return parse_feed(result.json(), chamber), None
+    except (requests.RequestException, ValueError, FeedValidationError) as exc:
+        return None, str(exc)
 
 
-def normalize(seat: dict, source: dict | None, as_of: str | None) -> dict:
-    basic = dict(seat)
-    basic.update({"coverage": "No source coverage", "reporting": None,
-                  "votes": None, "leader": "—", "called": False,
-                  "winner": "—", "updated": as_of or "—", "candidates": []})
-    if source is None:
-        return basic
-    cands = source.get("cands", [])
-    if not isinstance(cands, list):
-        cands = []
-    candidates = []
-    for c in cands:
-        if isinstance(c, dict):
-            candidates.append({"Candidate": str(c.get("n") or "Unspecified"),
-                               "Party": str(c.get("p") or "—"),
-                               "Votes": num(c.get("v")),
-                               "Percent": pct(c.get("pct"))})
-    candidates.sort(key=lambda c: c["Votes"] or 0, reverse=True)
-    total = num(source.get("total"))
-    if total is None and any(c["Votes"] is not None for c in candidates):
-        total = sum(c["Votes"] or 0 for c in candidates)
-    leader = str(source.get("leader") or "")
-    winner = str(source.get("winner") or "")
-    called = bool(source.get("called", False))
-    basic.update({"coverage": "Reported" if total is not None else "Feed listed; awaiting votes",
-                  "reporting": pct(source.get("pct_in")),
-                  "votes": total, "leader": leader or "—",
-                  "called": called, "winner": winner if called and winner else "—",
-                  "candidates": candidates})
-    return basic
+house, house_error = fetch_feed("House")
+senate, senate_error = fetch_feed("Senate")
+feeds = [house, senate]
+errors = [message for message in [house_error, senate_error] if message]
+poll_seconds = refresh_seconds(feeds, failures=1 if errors else 0)
+st_autorefresh(interval=poll_seconds * 1000, key="civicpulse_poll")
 
+st.markdown("""<section class="hero"><div class="eyebrow">CivicPulse / public election information</div>
+<h1>2026 U.S. Congressional Elections</h1>
+<p>Explore 435 House districts and regularly scheduled Senate contests, sourced from published
+state returns where available. No forecasts, inferred winners, or fabricated vote totals.</p>
+<span class="pill">Election Day · November 3, 2026</span>
+<span class="pill">Source-aware refresh</span></section>""", unsafe_allow_html=True)
 
-st_autorefresh(interval=REFRESH_SECONDS * 1000, key="civicpulse_refresh")
-st.markdown("""<div class="hero"><div class="eyebrow">CivicPulse · Nonpartisan election coverage</div>
-<h1>2026 Congressional Elections</h1>
-<p>Explore U.S. House and Senate races, reported vote totals, and the availability of source data.
-Updates reflect the publisher's schedule—not an instant official certification.</p>
-<span class="pill">Tuesday, November 3, 2026</span> &nbsp;
-<span class="pill">Automatically checks every 60 seconds</span></div>""", unsafe_allow_html=True)
-
+statuses = [f"{feed.office}: {feed.status}" if feed else
+            f"{office}: Source unavailable" for office, feed in [("House", house), ("Senate", senate)]]
 with st.sidebar:
-    st.header("Explore")
-    chamber_filter = st.selectbox("Chamber", ["Both", "House", "Senate"])
-    state_filter = st.selectbox("State", ["All states"] + STATES)
-    coverage_filter = st.selectbox("Feed status", ["All", "Reported", "Awaiting results", "No source coverage"])
-    search = st.text_input("Find a seat or candidate", placeholder="e.g., CA-12 or name")
-    if st.button("Refresh source data", use_container_width=True):
-        fetch.clear()
+    st.header("Explore races")
+    chosen_chamber = st.selectbox("Chamber", ["Both", "House", "Senate"])
+    chosen_state = st.selectbox("State", ["All states"] + STATES)
+    chosen_coverage = st.selectbox("Coverage", ["All", "Results reported", "Listed, no votes yet",
+                                               "Not available from this provider"])
+    search = st.text_input("Find district or candidate", placeholder="e.g. TX-23")
+    if st.button("Check source now", use_container_width=True):
+        fetch_feed.clear()
         st.rerun()
-    st.caption("Unofficial returns. This dashboard is not a government election authority.")
+    st.caption(f"Next automatic source check: roughly {poll_seconds // 60} minute(s)")
+    st.caption("This is an independent, nonpartisan information service.")
 
-house, house_at, house_error = fetch("House")
-senate, senate_at, senate_error = fetch("Senate")
+feed_lookup = {"House": house, "Senate": senate}
 rows = []
 for seat in registry():
-    source = (house if seat["chamber"] == "House" else senate).get(seat["seat"])
-    # Alternate statewide Senate key formats may be provided by the source.
-    rows.append(normalize(seat, source, house_at if seat["chamber"] == "House" else senate_at))
+    feed = feed_lookup[seat["Chamber"]]
+    found = feed.races.get(seat["Seat"]) if feed else None
+    health = feed.status if feed else "Feed unavailable"
+    rows.append(normalize_race(seat["Chamber"], seat["State"], seat["Seat"], found,
+                               health, feed.as_of if feed else None))
+
 frame = pd.DataFrame([{k: v for k, v in row.items() if k != "candidates"} for row in rows])
-reported = int(frame["coverage"].eq("Reported").sum())
-listed = int(frame["coverage"].ne("No source coverage").sum())
-a, b, c, d = st.columns(4)
-a.metric("House districts", len([r for r in rows if r["chamber"] == "House"]))
-b.metric("Regular Senate races", len(SENATE_2026))
-c.metric("Races with vote totals", reported)
-d.metric("Races in provider feed", listed)
-st.markdown('<div class="note">Coverage is limited to participating states. A race without source data is not a zero-vote race. A leading candidate is not necessarily a winner.</div>', unsafe_allow_html=True)
-if house_error or senate_error:
-    st.warning("One or more live feeds could not be retrieved. Registry remains available. " +
-               " | ".join(x for x in [house_error, senate_error] if x))
-left, right = st.columns([3, 1])
-with left:
-    st.subheader("Race explorer")
-with right:
-    st.caption(f"Last checked: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
-if chamber_filter != "Both":
-    frame = frame[frame["chamber"] == chamber_filter]
-if state_filter != "All states":
-    frame = frame[frame["state"] == state_filter]
-if coverage_filter == "Awaiting results":
-    frame = frame[frame["coverage"] == "Feed listed; awaiting votes"]
-elif coverage_filter != "All":
-    frame = frame[frame["coverage"] == coverage_filter]
-if search:
-    matched_seats = [r["seat"] for r in rows
-                     if search.lower() in r["seat"].lower() or
-                     any(search.lower() in str(c["Candidate"]).lower() for c in r["candidates"])]
-    frame = frame[frame["seat"].isin(matched_seats)]
-display = frame.rename(columns={"chamber": "Chamber", "state": "State", "seat": "Seat",
-                                "coverage": "Feed status", "votes": "Votes",
-                                "reporting": "Precincts reported (%)", "leader": "Leader party",
-                                "called": "Called by source", "winner": "Source winner", "updated": "Source as-of"})
-st.dataframe(display, use_container_width=True, hide_index=True,
-             column_config={"Votes": st.column_config.NumberColumn(format="%d")})
-st.download_button("Download filtered results (CSV)", display.to_csv(index=False).encode("utf-8"),
-                   file_name="civicpulse_2026_results.csv", mime="text/csv")
-seats = frame["seat"].tolist()
-if seats:
-    selected = st.selectbox("Inspect race", seats)
-    row = next(r for r in rows if r["seat"] == selected and (chamber_filter == "Both" or r["chamber"] == chamber_filter))
-    st.subheader(selected + " · " + row["chamber"])
-    st.caption(f"Feed status: {row['coverage']} | Source as-of: {row['updated']}")
-    if row["candidates"]:
-        st.dataframe(pd.DataFrame(row["candidates"]), hide_index=True, use_container_width=True)
-    else:
-        st.info("The provider has not published candidate vote details for this race.")
-st.markdown("### Sources and methodology")
-st.markdown("Election result data: [Open America election feed](https://openamerica.io/elections/api/). "
-            "House districts use 2020 census apportionment; Senate registry covers the 33 regularly scheduled seats. "
-            "The feed covers participating states only. Special elections, if any, require a separate audited registry. "
-            "Check [USA.gov's election resources](https://www.usa.gov/election-results) and individual state election offices for authoritative information.")
-st.caption("CivicPulse · Nonpartisan civic information · No predictions or inferred winners")
+reported = int((frame["Coverage"] == "Results reported").sum())
+listed = int((frame["Coverage"] != "Not available from this provider").sum())
+overview, explorer, sources = st.tabs(["Overview", "Race explorer", "Data & methodology"])
+
+with overview:
+    a, b, c, d = st.columns(4)
+    a.metric("House districts", sum(1 for r in rows if r["Chamber"] == "House"))
+    b.metric("Regular Senate contests", len(SENATE_2026))
+    c.metric("Races with votes", reported)
+    d.metric("Races included in feed", listed)
+    st.markdown('<div class="callout">Missing vote counts are not zero. A vote leader is not a winner. '
+                'Source precinct completion does not mean certified election results.</div>',
+                unsafe_allow_html=True)
+    if errors:
+        st.error("One or more source requests failed. Source coverage cannot be assessed reliably until they recover.")
+        with st.expander("Source error details"):
+            for message in errors:
+                st.code(message)
+    for message in statuses:
+        st.info(message)
+    st.caption("Numbers reflect this provider's limited coverage; these are not national vote or seat totals.")
+    source_update = [f"{feed.office}: {feed.as_of or 'Not yet published'}"
+                     for feed in feeds if feed is not None]
+    if source_update:
+        st.write("**Publisher timestamps:** " + " | ".join(source_update))
+
+with explorer:
+    filtered = frame
+    if chosen_chamber != "Both":
+        filtered = filtered[filtered["Chamber"] == chosen_chamber]
+    if chosen_state != "All states":
+        filtered = filtered[filtered["State"] == chosen_state]
+    if chosen_coverage != "All":
+        filtered = filtered[filtered["Coverage"] == chosen_coverage]
+    if search.strip():
+        needle = search.strip().casefold()
+        seats = {r["Seat"] for r in rows if needle in r["Seat"].casefold() or
+                 any(needle in candidate["Candidate"].casefold() for candidate in r["candidates"])}
+        filtered = filtered[filtered["Seat"].isin(seats)]
+    st.subheader("Find a race")
+    st.caption(f"{len(filtered):,} matching contests · Last app check: "
+               f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+    st.dataframe(filtered, hide_index=True, use_container_width=True,
+                 column_config={"Votes": st.column_config.NumberColumn(format="%d"),
+                                "Precincts (%)": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%")})
+    st.download_button("Download filtered CSV", filtered.to_csv(index=False).encode("utf-8"),
+                       file_name="civicpulse_2026_filtered.csv", mime="text/csv")
+    if not filtered.empty:
+        choices = [(r["Chamber"], r["Seat"]) for r in rows if
+                   ((filtered["Chamber"] == r["Chamber"]) & (filtered["Seat"] == r["Seat"])).any()]
+        selection = st.selectbox("Race details", choices,
+                                format_func=lambda item: f"{item[0]} · {item[1]}")
+        detail = next(r for r in rows if (r["Chamber"], r["Seat"]) == selection)
+        st.subheader(f"{detail['Chamber']} · {detail['Seat']}")
+        st.caption(f"{detail['Coverage']} · {detail['Feed health']} · "
+                   f"Publisher timestamp: {detail['Source timestamp']}")
+        if detail["candidates"]:
+            candidates = pd.DataFrame(detail["candidates"])
+            st.dataframe(candidates, hide_index=True, use_container_width=True)
+            votes = candidates.dropna(subset=["Votes"])
+            if not votes.empty and votes["Votes"].sum() > 0:
+                st.bar_chart(votes.set_index("Candidate")["Votes"], horizontal=True)
+        else:
+            st.info("This provider has no candidate vote breakdown for the selected race.")
+
+with sources:
+    st.subheader("Transparency and source status")
+    st.write("**Provider:** [Open America election results](https://openamerica.io/elections/api/). "
+             "The feed integrates official returns from participating states and does not call races.")
+    st.write("**Refresh:** The site checks every 60 seconds when any feed is live, "
+             "every 10 minutes before counting, and every 15 minutes when counting is no longer live. "
+             "Failures trigger a slower retry. The provider may update less frequently.")
+    st.write("**Coverage:** Not all 50 states provide compatible public feeds. "
+             "Unlisted races are explicitly labeled unavailable from this provider. "
+             "An unavailable feed is treated as an error, not as proof no race was reported.")
+    st.write("**Election scope:** 435 House districts and 33 regularly scheduled Senate contests; "
+             "special elections require separate integration.")
+    st.write("**Certification:** Reporting 100% of precincts is not legal certification. "
+             "Verify authoritative results with [USA.gov](https://www.usa.gov/election-results) "
+             "and the responsible state election office.")
+    st.caption("No predictions or inferred winners · Independent civic information · Open source")
