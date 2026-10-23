@@ -37,6 +37,34 @@ The process-shared `ElectionFeedClient` caches House and Senate separately. Cond
 
 On HTTP failures or invalid payloads, the last validated snapshot is retained and marked not verified fresh. The cache also writes validated JSON snapshots atomically under `.civicpulse-cache/` (override with `CIVICPULSE_CACHE_DIR`). After a process restart, snapshots no older than 72 hours are validated against the feed contract, their source endpoint is checked, and they are displayed only as **last-known, not verified fresh** until a new successful HTTP check (including HTTP 304). A restart always attempts a new request. Cache corruption, expiration and filesystem write errors cannot replace valid live data. Local disk is **not durable across redeploys, ephemeral instance replacement, or multiple server processes**, so external storage is required for those scenarios.
 
+## Independent health monitoring
+
+A separate GitHub Actions workflow (`.github/workflows/health-monitor.yml`) runs every
+15 minutes (subject to GitHub scheduler delays) and can also be started from
+**Actions → CivicPulse independent source and deployment monitor → Run workflow**.
+It makes read-only checks of the House and Senate 2026 API-v1 payloads and validates
+the returned office/year/schema. Empty feeds before election night **pass**; the
+monitor never invents race coverage, reads candidate winners, or records vote totals.
+
+**After deploying Streamlit**, open **GitHub repository Settings → Secrets and
+variables → Actions → Variables → New repository variable**, and set
+`CIVICPULSE_SITE_URL` to the deployed HTTPS origin (for example,
+`https://your-app.streamlit.app`). The workflow then checks
+`/_stcore/health` in addition to both provider feeds. If the variable is absent,
+the deployment check explicitly reports **SKIP**; source checks still run.
+Optionally set `ELECTION_RESULTS_URL` to match the app's configured HTTPS source.
+No API key or secret is required for the default provider.
+
+Each run writes a component-by-component GitHub Actions summary and fails if a
+source contract or configured site-health check fails. To receive notifications,
+configure your GitHub Actions workflow-failure notifications or an independent
+uptime alert. **GitHub Actions does not automatically send a custom alert email
+from this workflow.** Failures may reflect a provider outage rather than an app
+defect. This is a transport/schema check, **not** proof of election-night vote
+freshness, all-state coverage, full page rendering, or browser accessibility.
+Streamlit's server health endpoint can return OK even if a session script fails.
+A separate external uptime monitor and browser-level smoke test are still advised.
+
 ## Tests
 
 ```bash
