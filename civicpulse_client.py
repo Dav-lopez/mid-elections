@@ -87,7 +87,7 @@ class ElectionFeedClient:
             try:
                 response = self.session.get(
                     self.url, params={"year": 2026, "office": office},
-                    timeout=(5, 15), headers=headers,
+                    timeout=(5, 8), headers=headers,
                 )
                 status = response.status_code
                 if status == 304 and (previous is None or previous.feed is None):
