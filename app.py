@@ -1,13 +1,15 @@
-"""CivicPulse v4: source-aware, nonpartisan congressional results viewer."""
+"""CivicPulse v5: source-aware, nonpartisan congressional results viewer."""
 from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 from civicpulse_client import ElectionFeedClient
+from civicpulse_map import STATUS_LABELS, STATUS_COLORS, state_coverage
 from civicpulse_registry import HOUSE, SENATE_2026, SENATE_SPECIAL_2026, STATES, registry
 from civicpulse_core import (PROVIDER_STATES, coverage_status, national_coverage_metrics,
                              normalize_race, refresh_seconds)
@@ -100,7 +102,7 @@ frame = pd.DataFrame([{k: v for k, v in row.items() if k != "candidates"} for ro
 metrics = national_coverage_metrics(rows)
 reported = metrics["reported"]
 listed = metrics["listed"]
-overview, explorer, sources = st.tabs(["Overview", "Race explorer", "Data & methodology"])
+overview, explorer, sources = st.tabs(["Overview & map", "Race explorer", "Data & methodology"])
 
 with overview:
     a, b, c, d = st.columns(4)
@@ -108,6 +110,40 @@ with overview:
     b.metric("Senate contests (incl. special)", len(SENATE_2026) + len(SENATE_SPECIAL_2026))
     c.metric("Races with votes", reported)
     d.metric("Races included in feed", listed)
+    st.subheader("U.S. results-data availability map")
+    st.caption("This map shows the availability of source data — **not** partisan control, predicted winners, or certified results.")
+    map_data = state_coverage(rows, {office for office, snapshot in snapshots.items() if snapshot.error})
+    map_frame = pd.DataFrame(map_data)
+    legend = {label: idx for idx, label in enumerate(STATUS_LABELS)}
+    fig = go.Figure()
+    for label, color in zip(STATUS_LABELS, STATUS_COLORS):
+        selection = map_frame[map_frame["Status"] == label]
+        if selection.empty:
+            continue
+        hover = selection.apply(
+            lambda r: (f'{r["State"]} — {r["Status"]}'
+                       f'<br>Tracked contests: {r["Contests tracked"]}'
+                       f'<br>Listed in source: {r["Races listed"]}'
+                       f'<br>With votes: {r["Races with votes"]}'
+                       + ('<br>Source warning: office feed unavailable' if r["Partial outage"] else '')),
+            axis=1,
+        ).tolist()
+        fig.add_trace(go.Choropleth(
+            locations=selection["State"], locationmode="USA-states", z=[1] * len(selection),
+            colorscale=[[0, color], [1, color]], showscale=False, name=label,
+            showlegend=True, customdata=hover, hovertemplate="%{customdata}<extra></extra>",
+            marker_line_color="white", marker_line_width=1.1,
+        ))
+    fig.update_geos(scope="usa", bgcolor="rgba(0,0,0,0)", showlakes=False,
+                    showland=True, landcolor="#E5E9EF")
+    fig.update_layout(height=480, margin=dict(l=0, r=0, t=12, b=0),
+                      paper_bgcolor="rgba(0,0,0,0)", legend_title_text="Coverage status",
+                      legend=dict(orientation="h", y=-0.05, x=0, font=dict(size=11)))
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    with st.expander("Accessible state-by-state coverage table"):
+        st.dataframe(map_frame, hide_index=True, use_container_width=True)
+        st.download_button("Download state coverage CSV", map_frame.to_csv(index=False).encode("utf-8"),
+                           file_name="civicpulse_state_coverage.csv", mime="text/csv")
     st.caption("Senate scope: 33 regular elections + Florida and Ohio specials.")
     st.caption(f"Unsupported-state contests: {metrics['provider_unsupported']} · "
                f"Feed unavailable for {metrics['source_unavailable']} contests")
@@ -164,7 +200,7 @@ with explorer:
         detail = next(r for r in rows if (r["Chamber"], r["Seat"]) == selection)
         st.subheader(f"{detail['Chamber']} · {detail['Seat']}")
         st.caption(f"{detail['Coverage']} · {detail['Feed health']} · "
-                   f"Feed as-of (latest update across races): {detail['Source timestamp']}")
+                   f"Feed as-of (latest update across races): {detail['Feed as-of (UTC)']}")
         if detail["candidates"]:
             candidates = pd.DataFrame(detail["candidates"])
             st.dataframe(candidates, hide_index=True, use_container_width=True)
