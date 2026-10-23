@@ -8,6 +8,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 from civicpulse_client import ElectionFeedClient
+from civicpulse_registry import HOUSE, SENATE_2026, SENATE_SPECIAL_2026, STATES, registry
 from civicpulse_core import (PROVIDER_STATES, coverage_status, national_coverage_metrics,
                              normalize_race, refresh_seconds)
 
@@ -15,17 +16,6 @@ st.set_page_config(page_title="CivicPulse | Election Results", page_icon="🗳�
                    initial_sidebar_state="expanded")
 
 API_URL = os.getenv("ELECTION_RESULTS_URL", "https://openamerica.io/elections/results.json")
-HOUSE = {
-    "AL": 7, "AK": 1, "AZ": 9, "AR": 4, "CA": 52, "CO": 8, "CT": 5, "DE": 1,
-    "FL": 28, "GA": 14, "HI": 2, "ID": 2, "IL": 17, "IN": 9, "IA": 4, "KS": 4,
-    "KY": 6, "LA": 6, "ME": 2, "MD": 8, "MA": 9, "MI": 13, "MN": 8, "MS": 4,
-    "MO": 8, "MT": 2, "NE": 3, "NV": 4, "NH": 2, "NJ": 12, "NM": 3, "NY": 26,
-    "NC": 14, "ND": 1, "OH": 15, "OK": 5, "OR": 6, "PA": 17, "RI": 2, "SC": 7,
-    "SD": 1, "TN": 9, "TX": 38, "UT": 4, "VT": 1, "VA": 11, "WA": 10, "WV": 2,
-    "WI": 8, "WY": 1,
-}
-SENATE_2026 = "AL AK AR CO DE GA ID IL IA KS KY LA ME MA MI MN MS MT NE NH NJ NM NC OK OR RI SC SD TN TX VA WV WY".split()
-STATES = sorted(HOUSE)
 
 CSS = """
 <style>
@@ -52,16 +42,6 @@ padding:14px 17px;margin:14px 0}
 st.markdown(CSS, unsafe_allow_html=True)
 
 
-def registry() -> list[dict]:
-    entries = []
-    for state, count in HOUSE.items():
-        for district in range(1, count + 1):
-            seat = f"{state}-{district:02d}" if count > 1 else f"{state}-00"
-            entries.append({"Chamber": "House", "State": state, "Seat": seat})
-    for state in SENATE_2026:
-        entries.append({"Chamber": "Senate", "State": state, "Seat": state})
-    return entries
-
 
 @st.cache_resource
 def get_feed_client() -> ElectionFeedClient:
@@ -83,7 +63,7 @@ st_autorefresh(interval=poll_seconds * 1000, key="civicpulse_poll")
 
 st.markdown("""<section class="hero"><div class="eyebrow">CivicPulse / public election information</div>
 <h1>2026 U.S. Congressional Elections</h1>
-<p>Explore 435 House districts and regularly scheduled Senate contests, sourced from published
+<p>Explore 435 House districts and 35 Senate contests (33 regular, 2 special), sourced from published
 state returns where available. No forecasts, inferred winners, or fabricated vote totals.</p>
 <span class="pill">Election Day · November 3, 2026</span>
 <span class="pill">Source-aware refresh</span></section>""", unsafe_allow_html=True)
@@ -111,6 +91,7 @@ for seat in registry():
     snapshot = snapshots[seat["Chamber"]]
     row = normalize_race(seat["Chamber"], seat["State"], seat["Seat"], found,
                          snapshot.status, feed.as_of if feed else None)
+    row["Election"] = seat["Election"]
     if found is None:
         row["Coverage"] = coverage_status(seat["State"], feed is not None, False)
     rows.append(row)
@@ -124,9 +105,10 @@ overview, explorer, sources = st.tabs(["Overview", "Race explorer", "Data & meth
 with overview:
     a, b, c, d = st.columns(4)
     a.metric("House districts", sum(1 for r in rows if r["Chamber"] == "House"))
-    b.metric("Regular Senate contests", len(SENATE_2026))
+    b.metric("Senate contests (incl. special)", len(SENATE_2026) + len(SENATE_SPECIAL_2026))
     c.metric("Races with votes", reported)
     d.metric("Races included in feed", listed)
+    st.caption("Senate scope: 33 regular elections + Florida and Ohio specials.")
     st.caption(f"Unsupported-state contests: {metrics['provider_unsupported']} · "
                f"Feed unavailable for {metrics['source_unavailable']} contests")
     st.markdown('<div class="callout">Missing vote counts are not zero. A vote leader is not a winner. '
@@ -208,8 +190,8 @@ with sources:
              "with a warning and a real check timestamp. Cache is lost when the server restarts.")
     st.write("**Timestamps:** The feed as-of value is the newest state update anywhere in that office feed, "
              "not necessarily the update time of the selected race.")
-    st.write("**Election scope:** 435 House districts and 33 regularly scheduled Senate contests; "
-             "special elections require separate integration.")
+    st.write("**Election scope:** 435 House districts, 33 regular Senate contests, and two Senate specials (FL, OH). "
+             "The special seats have distinct keys; inclusion in the registry does not guarantee source coverage.")
     st.write("**Certification:** Reporting 100% of precincts is not legal certification. "
              "Verify authoritative results with [USA.gov](https://www.usa.gov/election-results) "
              "and the responsible state election office.")
