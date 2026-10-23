@@ -10,6 +10,7 @@ from streamlit_autorefresh import st_autorefresh
 
 from civicpulse_client import ElectionFeedClient
 from civicpulse_map import STATUS_LABELS, STATUS_COLORS, state_coverage
+from civicpulse_explorer import candidate_vote_rows, state_contests
 from civicpulse_registry import HOUSE, SENATE_2026, SENATE_SPECIAL_2026, STATES, registry
 from civicpulse_core import (PROVIDER_STATES, coverage_status, national_coverage_metrics,
                              normalize_race, refresh_seconds)
@@ -144,6 +145,44 @@ with overview:
         st.dataframe(map_frame, hide_index=True, use_container_width=True)
         st.download_button("Download state coverage CSV", map_frame.to_csv(index=False).encode("utf-8"),
                            file_name="civicpulse_state_coverage.csv", mime="text/csv")
+    st.subheader("State spotlight")
+    st.caption("Select a state to inspect its tracked races. This keyboard-accessible selector also works when the map is difficult to use on mobile.")
+    spotlight_state = st.selectbox("Inspect state", ["Choose a state"] + STATES, key="spotlight_state")
+    if spotlight_state != "Choose a state":
+        spotlight_chamber = st.radio("Show contests", ["Both", "House", "Senate"],
+                                    horizontal=True, key="spotlight_chamber")
+        spotlight_rows = state_contests(rows, spotlight_state, spotlight_chamber)
+        summary = next(item for item in map_data if item["State"] == spotlight_state)
+        st.caption(f'{spotlight_state} · {summary["Status"]} · '
+                   f'{summary["Races listed"]} source-listed contests · '
+                   f'{summary["Races with votes"]} with votes')
+        if not spotlight_rows:
+            st.info("No tracked contests match this chamber and state.")
+        else:
+            spotlight_table = pd.DataFrame([
+                {name: item.get(name) for name in
+                 ("Chamber", "Seat", "Election", "Coverage", "Votes", "Leader (not winner)", "Source call")}
+                for item in spotlight_rows
+            ])
+            st.dataframe(spotlight_table, hide_index=True, use_container_width=True)
+            selected_key = st.selectbox(
+                "Inspect a race", [(item["Chamber"], item["Seat"]) for item in spotlight_rows],
+                format_func=lambda key: f"{key[0]} · {key[1]}",
+                key=f"spotlight_race_{spotlight_state}_{spotlight_chamber}",
+            )
+            selected_race = next(item for item in spotlight_rows
+                                 if (item["Chamber"], item["Seat"]) == selected_key)
+            st.caption(f'{selected_race["Coverage"]} · {selected_race["Feed health"]}')
+            vote_rows = candidate_vote_rows(selected_race)
+            if vote_rows:
+                vote_frame = pd.DataFrame(vote_rows)
+                st.dataframe(vote_frame, hide_index=True, use_container_width=True)
+                if any(candidate["Votes"] > 0 for candidate in vote_rows):
+                    st.bar_chart(vote_frame.set_index("Candidate")["Votes"], horizontal=True)
+                else:
+                    st.info("Candidate entries are listed, but no votes have been reported yet.")
+            else:
+                st.info("No candidate vote breakdown is available from this provider for this race.")
     st.caption("Senate scope: 33 regular elections + Florida and Ohio specials.")
     st.caption(f"Unsupported-state contests: {metrics['provider_unsupported']} · "
                f"Feed unavailable for {metrics['source_unavailable']} contests")
@@ -217,6 +256,7 @@ with sources:
     st.write("**Refresh:** While a feed is live it is checked every 60 seconds; before counting, "
              "every 10 minutes; when counting but not live, every 15 minutes. "
              "Failures use exponential backoff up to 10 minutes. The provider may update less frequently.")
+    st.write("**State spotlight:** The selector below the map exposes each state's tracked races and published candidate votes without requiring map interaction. Missing votes are never shown as zero.")
     st.write(f"**Coverage:** The provider documents adapters for {len(PROVIDER_STATES)} states: "
              + ", ".join(sorted(PROVIDER_STATES)) + ". "
              "An unsupported state is different from a supported state whose race has not appeared. "
