@@ -1,11 +1,13 @@
 """Unit tests for conditional requests, backoff and last-known-good snapshots."""
 import unittest
 import threading
+from unittest.mock import patch
 from datetime import datetime, timezone
 
 import requests
 
 from civicpulse_client import ElectionFeedClient
+from civicpulse_polling import fetch_offices
 
 
 def payload(office="House", **changes):
@@ -135,6 +137,22 @@ class ClientTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.client(session).fetch("Governor")
         self.assertEqual(session.calls, [])
+
+    def test_default_parallel_office_requests_use_distinct_http_sessions(self):
+        """A shared requests.Session is not safe for simultaneous office fetches."""
+        house_session = Session(Response(data=payload("House")))
+        senate_session = Session(Response(data=payload("Senate")))
+        with patch("civicpulse_client.requests.Session",
+                   side_effect=[house_session, senate_session]) as make_session:
+            client = ElectionFeedClient(
+                clock=lambda: self.t, utcnow=lambda: self.when)
+        results = fetch_offices(client)
+        self.assertEqual(make_session.call_count, 2)
+        self.assertIsNot(client._sessions["House"], client._sessions["Senate"])
+        self.assertEqual(results["House"].feed.office, "House")
+        self.assertEqual(results["Senate"].feed.office, "Senate")
+        self.assertEqual(house_session.calls[0][1]["params"]["office"], "House")
+        self.assertEqual(senate_session.calls[0][1]["params"]["office"], "Senate")
 
     def test_independent_office_caches(self):
         session = Session(Response(data=payload()), Response(data=payload(office="Senate")))

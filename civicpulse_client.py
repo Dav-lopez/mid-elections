@@ -49,7 +49,15 @@ class ElectionFeedClient:
         disk_cache: DiskFeedCache | None = None,
     ):
         self.url = url
-        self.session = session if session is not None else requests.Session()
+        # requests.Session has mutable connection/cookie state and is not guaranteed
+        # thread-safe. Default House/Senate requests use separate sessions.
+        # An injected session is retained for existing test doubles; callers
+        # providing one must ensure it is safe for concurrent office requests.
+        self._sessions = (
+            {office: session for office in ("House", "Senate")}
+            if session is not None
+            else {office: requests.Session() for office in ("House", "Senate")}
+        )
         self.clock = clock if clock is not None else time.monotonic
         self.utcnow = utcnow if utcnow is not None else lambda: datetime.now(timezone.utc)
         self._locks = {name: threading.Lock() for name in ('House', 'Senate')}
@@ -105,7 +113,7 @@ class ElectionFeedClient:
                 headers["If-None-Match"] = previous.etag
             status = None
             try:
-                response = self.session.get(
+                response = self._sessions[office].get(
                     self.url, params={"year": 2026, "office": office},
                     timeout=(5, 8), headers=headers,
                 )
@@ -113,7 +121,7 @@ class ElectionFeedClient:
                 if status == 304 and (previous is None or previous.feed is None):
                     # Defensive recovery: a 304 is unusable without a cached body.
                     headers.pop("If-None-Match", None)
-                    response = self.session.get(
+                    response = self._sessions[office].get(
                         self.url, params={"year": 2026, "office": office},
                         timeout=(5, 8), headers=headers,
                     )
