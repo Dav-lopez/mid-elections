@@ -9,6 +9,7 @@ CivicPulse is an independent, nonpartisan Streamlit viewer for **partial-coverag
 - **State spotlight:** choose a state and chamber to see tracked contests, source coverage, and candidate vote breakdowns where available. The selector is a keyboard-accessible alternative to relying on map interaction.
 - Race explorer with state/chamber/coverage filters, candidate search, race details, and filtered CSV export.
 - Clear distinction between votes reported, races listed without votes, missing races, unsupported states, and feed failures. Missing data is **not zero**.
+- **No inferred race totals:** The `Votes` column shows only provider-published race totals. Positive candidate-level counts can mark a race as reporting while its race-wide total remains blank if unpublished. Candidate lists may omit write-ins or delayed entries; they are never summed to fabricate a total.
 
 ## Run locally
 
