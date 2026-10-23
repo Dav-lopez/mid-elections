@@ -1,7 +1,8 @@
-"""CivicPulse v3: source-aware, nonpartisan congressional results viewer."""
+"""CivicPulse v4: source-aware, nonpartisan congressional results viewer."""
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 import pandas as pd
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
@@ -138,6 +139,13 @@ with overview:
                 st.code(message)
     for message in statuses:
         st.info(message)
+    for office, snapshot in snapshots.items():
+        if snapshot.last_success_at is None:
+            st.caption(f"{office}: No successful source check yet")
+        else:
+            checked = snapshot.last_success_at.astimezone(timezone.utc)
+            age = max(0, int((datetime.now(timezone.utc) - checked).total_seconds() // 60))
+            st.caption(f"{office}: Last successful check {checked:%H:%M UTC} ({age} min ago)")
     st.caption(f"Source adapters: {len(PROVIDER_STATES)} states; a state adapter does not guarantee a race has appeared. These are not national vote or seat totals.")
     source_update = [f"{feed.office}: {feed.as_of or 'Not yet published'}"
                      for feed in feeds if feed is not None]
@@ -174,7 +182,7 @@ with explorer:
         detail = next(r for r in rows if (r["Chamber"], r["Seat"]) == selection)
         st.subheader(f"{detail['Chamber']} · {detail['Seat']}")
         st.caption(f"{detail['Coverage']} · {detail['Feed health']} · "
-                   f"Feed as-of (latest update across races): {detail['Feed as-of (UTC)']}")
+                   f"Feed as-of (latest update across races): {detail['Source timestamp']}")
         if detail["candidates"]:
             candidates = pd.DataFrame(detail["candidates"])
             st.dataframe(candidates, hide_index=True, use_container_width=True)
