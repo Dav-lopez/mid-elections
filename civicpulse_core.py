@@ -93,7 +93,7 @@ def normalize_race(office: str, state: str, seat: str, race: dict | None,
         "Chamber": office, "State": state, "Seat": seat,
         "Coverage": "Not available from this provider",
         "Votes": None, "Precincts (%)": None, "Leader (not winner)": "—",
-        "Source call": "—", "Source timestamp": as_of or "—",
+        "Source call": "—", "Feed as-of (UTC)": as_of or "—",
         "Feed health": feed_status, "candidates": [],
     }
     if race is None:
