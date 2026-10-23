@@ -1,4 +1,4 @@
-"""CivicPulse v5: source-aware, nonpartisan congressional results viewer."""
+"""CivicPulse: source-aware, nonpartisan congressional results viewer."""
 from __future__ import annotations
 
 import os
@@ -13,7 +13,7 @@ from civicpulse_map import STATUS_LABELS, STATUS_COLORS, state_coverage
 from civicpulse_explorer import candidate_vote_rows, state_contests
 from civicpulse_registry import HOUSE, SENATE_2026, SENATE_SPECIAL_2026, STATES, registry
 from civicpulse_core import (PROVIDER_STATES, coverage_status, national_coverage_metrics,
-                             normalize_race, refresh_seconds)
+                             normalize_race, refresh_seconds, format_feed_timestamp)
 
 st.set_page_config(page_title="CivicPulse | Election Results", page_icon="🗳️", layout="wide",
                    initial_sidebar_state="expanded")
@@ -95,6 +95,7 @@ for seat in registry():
     row = normalize_race(seat["Chamber"], seat["State"], seat["Seat"], found,
                          snapshot.status, feed.as_of if feed else None)
     row["Election"] = seat["Election"]
+    row["Feed as-of (UTC)"] = format_feed_timestamp(feed.as_of if feed else None)
     if found is None:
         row["Coverage"] = coverage_status(seat["State"], feed is not None, False)
     rows.append(row)
@@ -204,7 +205,7 @@ with overview:
             age = max(0, int((datetime.now(timezone.utc) - checked).total_seconds() // 60))
             st.caption(f"{office}: Last successful check {checked:%H:%M UTC} ({age} min ago)")
     st.caption(f"Source adapters: {len(PROVIDER_STATES)} states; a state adapter does not guarantee a race has appeared. These are not national vote or seat totals.")
-    source_update = [f"{feed.office}: {feed.as_of or 'Not yet published'}"
+    source_update = [f"{feed.office}: {format_feed_timestamp(feed.as_of)}"
                      for feed in feeds if feed is not None]
     if source_update:
         st.write("**Publisher timestamps:** " + " | ".join(source_update))
