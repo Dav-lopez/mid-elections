@@ -137,3 +137,35 @@ def refresh_seconds(feeds: list[Feed | None], failures: int = 0) -> int:
     if any(feed.counting for feed in active):
         return 900
     return 600
+
+
+# States documented by Open America's results API (contract as of 2026-09-27).
+# This describes provider capability, NOT a claim that votes have been reported.
+PROVIDER_STATES = frozenset(
+    "AR AZ CO CT FL GA IA ID IN LA MI MN NC PA RI SC TX UT VA VT WA WV".split()
+)
+
+
+def coverage_status(state: str, feed_available: bool, race_present: bool) -> str:
+    """Distinguish unsupported geography from a pending race and feed outage.
+
+    A supported state can still omit specific races (including unopposed races).
+    Consequently, never equate a missing race with no votes cast.
+    """
+    if not feed_available:
+        return "Source unavailable"
+    if state not in PROVIDER_STATES:
+        return "State not supported by provider"
+    if not race_present:
+        return "Race absent from provider feed"
+    return "Present in provider feed"
+
+
+def national_coverage_metrics(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Count actual feed coverage, not inferred winners or missing-row zeros."""
+    return {
+        "reported": sum(row.get("Coverage") == "Results reported" for row in rows),
+        "listed": sum(row.get("Coverage") in ("Results reported", "Listed, no votes yet") for row in rows),
+        "provider_unsupported": sum(row.get("Coverage") == "State not supported by provider" for row in rows),
+        "source_unavailable": sum(row.get("Coverage") == "Source unavailable" for row in rows),
+    }
