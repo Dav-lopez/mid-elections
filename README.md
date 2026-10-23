@@ -55,6 +55,15 @@ the deployment check explicitly reports **SKIP**; source checks still run.
 Optionally set `ELECTION_RESULTS_URL` to match the app's configured HTTPS source.
 No API key or secret is required for the default provider.
 
+Each successful source check also compares the identifiers actually published in
+that office feed with the 2026 tracked-seat registry. The summary shows the number
+of matched and unmatched identifiers and up to five sanitized examples of unmatched
+keys. These are **mapping diagnostics**, not votes, winners, certified results, or
+proof of statewide/national coverage. Empty pre-election feeds are valid; an
+unmatched identifier prompts manual mapping review but does not fail a valid feed.
+The source may use different IDs for special contests, so no automatic aliasing is
+performed without provider verification.
+
 Each run writes a component-by-component GitHub Actions summary and fails if a
 source contract or configured site-health check fails. To receive notifications,
 configure your GitHub Actions workflow-failure notifications or an independent
@@ -68,7 +77,7 @@ A separate external uptime monitor and browser-level smoke test are still advise
 ## Tests
 
 ```bash
-python -m compileall -q app.py civicpulse_core.py civicpulse_client.py civicpulse_registry.py civicpulse_map.py civicpulse_explorer.py civicpulse_polling.py civicpulse_disk_cache.py
+python -m compileall -q app.py civicpulse_core.py civicpulse_client.py civicpulse_registry.py civicpulse_map.py civicpulse_explorer.py civicpulse_polling.py civicpulse_disk_cache.py civicpulse_source_audit.py
 python -m unittest discover -s tests -v
 ```
 
