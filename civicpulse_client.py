@@ -15,6 +15,7 @@ from typing import Callable
 import requests
 
 from civicpulse_core import Feed, FeedValidationError, parse_feed, refresh_seconds
+from civicpulse_disk_cache import DiskFeedCache
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ class ElectionFeedClient:
         session: requests.Session | None = None,
         clock: Callable[[], float] | None = None,
         utcnow: Callable[[], datetime] | None = None,
+        disk_cache: DiskFeedCache | None = None,
     ):
         self.url = url
         self.session = session if session is not None else requests.Session()
@@ -54,6 +56,8 @@ class ElectionFeedClient:
         self._snapshots: dict[str, FeedSnapshot] = {}
         self._last_attempt_clock: dict[str, float] = {}
         self._minimum_force_gap = 60
+        self.disk_cache = disk_cache
+        self._restored: set[str] = set()
 
     def fetch(self, office: str, *, force: bool = False) -> FeedSnapshot:
         if office not in ("House", "Senate"):
@@ -68,6 +72,22 @@ class ElectionFeedClient:
         try:
             now = self.clock()
             previous = self._snapshots.get(office)
+            if self.disk_cache is not None and previous is None and office not in self._restored:
+                self._restored.add(office)
+                restored = self.disk_cache.load(office, self.utcnow())
+                if restored is not None:
+                    saved_feed, saved_at, saved_etag = restored
+                    previous = FeedSnapshot(
+                        feed=saved_feed,
+                        error="Disk recovery: results not yet checked after restart",
+                        checked_at=self.utcnow(),
+                        last_success_at=saved_at,
+                        etag=saved_etag,
+                        next_due=now,
+                        failures=0,
+                        http_status=None,
+                    )
+                    self._snapshots[office] = previous
             if previous is not None:
                 if previous.error and now < previous.next_due:
                     return previous
@@ -95,7 +115,7 @@ class ElectionFeedClient:
                     headers.pop("If-None-Match", None)
                     response = self.session.get(
                         self.url, params={"year": 2026, "office": office},
-                        timeout=(5, 15), headers=headers,
+                        timeout=(5, 8), headers=headers,
                     )
                     status = response.status_code
                 if status == 304:
@@ -107,6 +127,12 @@ class ElectionFeedClient:
                     etag = response.headers.get("ETag")
                 if feed is None:
                     raise ValueError("No validated body available for HTTP 304")
+                if self.disk_cache is not None:
+                    try:
+                        self.disk_cache.save(feed, checked_at, etag)
+                    except OSError:
+                        # A read-only filesystem should not take down the live view.
+                        pass
                 snapshot = FeedSnapshot(
                     feed=feed, error=None, checked_at=checked_at,
                     last_success_at=checked_at, etag=etag,

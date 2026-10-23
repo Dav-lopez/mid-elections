@@ -35,12 +35,12 @@ Connect this repository to Streamlit Community Cloud, select the `main` branch a
 
 The process-shared `ElectionFeedClient` caches House and Senate separately. Conditional requests use ETags; HTTP 304 reuses the last validated body. Normal polling is 60 seconds when live, 10 minutes before results, and 15 minutes when counting but not live. Failures back off exponentially up to 10 minutes; manual refresh cannot bypass backoff or the minimum 60-second request gap.
 
-On HTTP failures or invalid payloads, the last validated snapshot is retained and marked not verified fresh. The cache is **in-memory only**, not durable across restarts or shared across multiple server processes.
+On HTTP failures or invalid payloads, the last validated snapshot is retained and marked not verified fresh. The cache also writes validated JSON snapshots atomically under `.civicpulse-cache/` (override with `CIVICPULSE_CACHE_DIR`). After a process restart, snapshots no older than 72 hours are validated against the feed contract, their source endpoint is checked, and they are displayed only as **last-known, not verified fresh** until a new successful HTTP check (including HTTP 304). A restart always attempts a new request. Cache corruption, expiration and filesystem write errors cannot replace valid live data. Local disk is **not durable across redeploys, ephemeral instance replacement, or multiple server processes**, so external storage is required for those scenarios.
 
 ## Tests
 
 ```bash
-python -m compileall -q app.py civicpulse_core.py civicpulse_client.py civicpulse_registry.py civicpulse_map.py civicpulse_explorer.py
+python -m compileall -q app.py civicpulse_core.py civicpulse_client.py civicpulse_registry.py civicpulse_map.py civicpulse_explorer.py civicpulse_polling.py civicpulse_disk_cache.py
 python -m unittest discover -s tests -v
 ```
 
@@ -50,4 +50,4 @@ GitHub Actions runs compilation and unit tests on feature pushes and pull reques
 
 Attribute provider data to **official state election offices via Open America** and preserve timestamps. Open America does not provide complete national results coverage. Reporting 100% of precincts is not legal certification. Verify consequential claims with the responsible state election office or [USA.gov's election results guide](https://www.usa.gov/election-results). Contact the provider before repackaging its feed as a standalone commercial results service.
 
-Next priorities: browser accessibility checks, mobile responsiveness, live source reconciliation, load testing, deployment monitoring, and optional durable caching.
+Next priorities: browser accessibility checks, mobile responsiveness, live source reconciliation, load testing, deployment monitoring, and external durable storage.
