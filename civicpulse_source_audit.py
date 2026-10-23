@@ -36,7 +36,7 @@ class KeyAudit:
                 f"; {self.unmatched} unmatched provider identifier(s) "
                 f"(sample: {examples}) — review source-to-registry mapping"
             )
-        return message + "; no complete-coverage guarantee"
+        return message + "; identifiers do not prove votes were reported"
 
 
 def _safe_identifier(value: str) -> str:
