@@ -1,6 +1,14 @@
 # CivicPulse — 2026 U.S. Congressional Elections
 
-A nonpartisan Streamlit results viewer with filters, race details, candidate comparisons and CSV export. This is a **partial-coverage election results viewer**, not a nationwide results authority.
+CivicPulse is an independent, nonpartisan Streamlit viewer for **partial-coverage, unofficial** congressional election returns. It does not predict, infer, or call races. Its national map visualizes **source-data availability**, not party control or winners.
+
+## Features
+
+- Registry of 435 House districts, 33 regular Senate contests, and the Florida and Ohio Senate special elections (470 contests in total).
+- State-level data-availability map with five neutral status categories, an accessible table, and a downloadable state CSV.
+- **State spotlight:** choose a state and chamber to see tracked contests, source coverage, and candidate vote breakdowns where available. The selector is a keyboard-accessible alternative to relying on map interaction.
+- Race explorer with state/chamber/coverage filters, candidate search, race details, and filtered CSV export.
+- Clear distinction between votes reported, races listed without votes, missing races, unsupported states, and feed failures. Missing data is **not zero**.
 
 ## Run locally
 
@@ -9,36 +17,37 @@ python -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
+Set `ELECTION_RESULTS_URL` to override the default provider endpoint. The endpoint must implement the expected API v1 JSON contract.
+
 ## Deploy
 
-Connect this repository to [Streamlit Community Cloud](https://share.streamlit.io), select the `main` branch and `app.py` entrypoint, and deploy. Verify the public URL, the network feed, and the mobile layout before sharing widely.
+Connect this repository to Streamlit Community Cloud, select the `main` branch and `app.py` entrypoint, then deploy. Before promoting the deployment, verify the real provider connection, mobile layout, keyboard navigation, and live error behavior. CI alone does not validate production hosting.
 
 ## Feed contract and coverage
 
-- Provider: [Open America election results API](https://openamerica.io/elections/api/), version 1. Results originate with participating official state election offices, are **unofficial**, and do **not** constitute race calls or certified winners.
-- As documented on **2026-09-27**, the provider has adapters for **22 states**: AR, AZ, CO, CT, FL, GA, IA, ID, IN, LA, MI, MN, NC, PA, RI, SC, TX, UT, VA, VT, WA, WV. This is not a promise that every race in those states is listed or reporting.
-- The app displays all 435 House districts and 33 **regularly scheduled** Senate contests. Special elections are not currently included in the registry. No source results are inferred for districts absent from the feed.
-- Race statuses distinguish **state not supported by provider**, **race absent from provider feed**, **source unavailable**, **listed without votes**, and **results reported**.
-- Candidate search requires candidate data to have appeared in the feed. No pre-election roster is supplied by this API.
-- The publisher's **`as_of` timestamp** is the newest update *anywhere in that office's feed*, not a per-race timestamp. The UI also displays the last actual HTTP attempt time.
+- Provider: [Open America election results API](https://openamerica.io/elections/api/), version 1. Its returns are unofficial, and provider-supplied calls are not legal certification.
+- The app's documented adapter list (recorded **2026-09-27**) covers **22 states**: AR, AZ, CO, CT, FL, GA, IA, ID, IN, LA, MI, MN, NC, PA, RI, SC, TX, UT, VA, VT, WA, WV. An adapter is not a promise of data for every race.
+- Florida and Ohio special Senate elections have distinct registry identifiers. Their inclusion does not imply that the provider supplies both results.
+- The publisher's `as_of` timestamp is the newest update anywhere in an office feed, **not** the update time of each race.
+- The map does not represent partisan winners or forecast outcomes. Source outages take precedence in its availability classification, even when last-known results remain visible.
 
 ## HTTP resilience
 
-The `ElectionFeedClient` uses one shared in-memory cache per server process for House and Senate. It sends `If-None-Match` when an ETag exists and reuses the validated payload on HTTP 304. The polling cadence is 60 seconds while live, 10 minutes before results, 15 minutes when counting is not live, and exponential backoff (up to 10 minutes) after request failures.
+The process-shared `ElectionFeedClient` caches House and Senate separately. Conditional requests use ETags; HTTP 304 reuses the last validated body. Normal polling is 60 seconds when live, 10 minutes before results, and 15 minutes when counting but not live. Failures back off exponentially up to 10 minutes; manual refresh cannot bypass backoff or the minimum 60-second request gap.
 
-A network failure or schema mismatch **does not erase the last validated feed**. The app visibly marks it as cached and not verified fresh; it never treats missing votes as zero. This cache is **not durable**: it is lost on server restart or when the process is replaced. Scaling across multiple app instances would require an external shared cache.
+On HTTP failures or invalid payloads, the last validated snapshot is retained and marked not verified fresh. The cache is **in-memory only**, not durable across restarts or shared across multiple server processes.
 
-## Testing
+## Tests
 
 ```bash
-python -m compileall -q app.py civicpulse_core.py civicpulse_client.py
+python -m compileall -q app.py civicpulse_core.py civicpulse_client.py civicpulse_registry.py civicpulse_map.py civicpulse_explorer.py
 python -m unittest discover -s tests -v
 ```
 
-GitHub Actions runs these checks on pushes and PRs. They use deterministic mocked HTTP responses, including 304, 503, malformed payloads, timeouts, and recovery. They do **not** prove that the live provider endpoint is reachable or that a production Streamlit deployment is healthy. For optional integration testing, the provider documents `?year=2024&office=House` as a replay dataset.
+GitHub Actions runs compilation and unit tests on feature pushes and pull requests. Mocked HTTP tests cover conditional requests, timeouts, backoff, and recovery. Pure tests cover registry completeness, map aggregation, state navigation, and candidate vote filtering. These checks **do not** establish live provider availability, actual election-night performance, or browser-level accessibility.
 
-## Limitations and responsible use
+## Responsible use and limitations
 
-Open America is not a full national election results service. State feed terms vary; attribute displayed results to **"official state election offices via Open America (openamerica.io)"** and preserve timestamps. Contact the provider before repackaging its live feed as a standalone results service. No election forecasts, inferred calls, or winners are created by this application. Reporting 100% of precincts is **not** certification.
+Attribute provider data to **official state election offices via Open America** and preserve timestamps. Open America does not provide complete national results coverage. Reporting 100% of precincts is not legal certification. Verify consequential claims with the responsible state election office or [USA.gov's election results guide](https://www.usa.gov/election-results). Contact the provider before repackaging its feed as a standalone commercial results service.
 
-For authoritative information, see [USA.gov's election results guide](https://www.usa.gov/election-results) and the relevant state election office. Future work includes source reconciliation, election-night load tests, optional durable caching, and special-election coverage.
+Next priorities: browser accessibility checks, mobile responsiveness, live source reconciliation, load testing, deployment monitoring, and optional durable caching.
