@@ -14,7 +14,7 @@ from typing import Callable
 
 import requests
 
-from civicpulse_core import Feed, parse_feed, refresh_seconds
+from civicpulse_core import Feed, FeedValidationError, parse_feed, refresh_seconds
 
 
 @dataclass(frozen=True)
@@ -50,18 +50,32 @@ class ElectionFeedClient:
         self.session = session if session is not None else requests.Session()
         self.clock = clock if clock is not None else time.monotonic
         self.utcnow = utcnow if utcnow is not None else lambda: datetime.now(timezone.utc)
-        self._lock = threading.RLock()
+        self._locks = {name: threading.Lock() for name in ('House', 'Senate')}
         self._snapshots: dict[str, FeedSnapshot] = {}
+        self._last_attempt_clock: dict[str, float] = {}
+        self._minimum_force_gap = 60
 
     def fetch(self, office: str, *, force: bool = False) -> FeedSnapshot:
         if office not in ("House", "Senate"):
             raise ValueError("Unsupported office")
-        with self._lock:
+        lock = self._locks[office]
+        if not lock.acquire(blocking=False):
+            cached = self._snapshots.get(office)
+            if cached is not None:
+                return cached
+            return FeedSnapshot(None, "Request in progress; no validated results yet",
+                                self.utcnow(), None, None, self.clock(), 0, None)
+        try:
             now = self.clock()
             previous = self._snapshots.get(office)
-            if previous is not None and not force and now < previous.next_due:
-                return previous
+            if previous is not None:
+                if previous.error and now < previous.next_due:
+                    return previous
+                if now < previous.next_due and (not force or
+                    now - self._last_attempt_clock.get(office, now) < self._minimum_force_gap):
+                    return previous
             checked_at = self.utcnow()
+            self._last_attempt_clock[office] = now
             headers = {
                 "Accept": "application/json",
                 "Accept-Encoding": "gzip",
@@ -99,7 +113,7 @@ class ElectionFeedClient:
                     next_due=now + refresh_seconds([feed]), failures=0,
                     http_status=status,
                 )
-            except (requests.RequestException, ValueError, TypeError) as exc:
+            except (requests.RequestException, FeedValidationError, ValueError) as exc:
                 failures = (previous.failures if previous else 0) + 1
                 snapshot = FeedSnapshot(
                     feed=previous.feed if previous else None,
@@ -112,3 +126,5 @@ class ElectionFeedClient:
                 )
             self._snapshots[office] = snapshot
             return snapshot
+        finally:
+            lock.release()
