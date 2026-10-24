@@ -65,3 +65,39 @@ def audit_feed_keys(feed: Feed) -> KeyAudit:
         unmatched_examples=tuple(_safe_identifier(key)
                                  for key in sorted(unknown)[:5]),
     )
+
+
+def reconciliation_rows(feed: Feed) -> list[dict[str, str]]:
+    """Export every observed/missing registry key and every unmatched source key.
+
+    These rows reconcile *identifiers*, not vote totals, results, or verified
+    provider coverage. An unobserved key may be published later.
+    Untrusted provider identifiers are sanitized for spreadsheet export.
+    """
+    if feed.office not in ("House", "Senate"):
+        raise ValueError("Unsupported office")
+    expected = {
+        item["Seat"]: item["State"]
+        for item in registry() if item["Chamber"] == feed.office
+    }
+    published = set(feed.races)
+    rows = []
+    for seat, state in sorted(expected.items()):
+        observed = seat in published
+        rows.append({
+            "Office": feed.office,
+            "State": state,
+            "Tracked contest": seat,
+            "Provider identifier": seat if observed else "",
+            "Identifier audit": ("Observed in validated snapshot" if observed
+                                 else "Not published in snapshot"),
+        })
+    for key in sorted(published - expected):
+        rows.append({
+            "Office": feed.office,
+            "State": "Unverified",
+            "Tracked contest": "",
+            "Provider identifier": _safe_identifier(key),
+            "Identifier audit": "Unmatched provider identifier",
+        })
+    return rows
