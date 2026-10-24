@@ -55,5 +55,26 @@ class CsvExportTests(unittest.TestCase):
         ])
 
 
+    def test_categorical_provider_text_and_untrusted_headers_are_escaped(self):
+        # Categorical text is not an object or string dtype; previously it
+        # bypassed the export sanitizer. Headers are spreadsheet cells too.
+        frame = pd.DataFrame({
+            "=HYPERLINK(A1)": pd.Series(["=SUM(1,2)", "safe"], dtype="category"),
+            "Votes": [10, 20],
+        })
+        original = frame.copy(deep=True)
+        rows = list(csv.DictReader(io.StringIO(spreadsheet_safe_csv(frame).decode("utf-8"))))
+        self.assertEqual(rows[0]["'=HYPERLINK(A1)"], "'=SUM(1,2)")
+        self.assertEqual(rows[1]["'=HYPERLINK(A1)"], "safe")
+        self.assertEqual(rows[0]["Votes"], "10")
+        pd.testing.assert_frame_equal(frame, original)
+
+    def test_additional_invisible_formula_prefixes(self):
+        for prefix in ("\\u200c", "\\u200d", "\\u2060", "\\u00a0", "\\u202f"):
+            value = prefix + "=1+1"
+            with self.subTest(prefix=repr(prefix)):
+                self.assertEqual(neutralize_csv_cell(value), "'" + value)
+
+
 if __name__ == "__main__":
     unittest.main()
