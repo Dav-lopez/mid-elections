@@ -225,6 +225,7 @@ with explorer:
                  any(needle in candidate["Candidate"].casefold() for candidate in r["candidates"])}
         filtered = filtered[filtered["Seat"].isin(seats)]
     st.subheader("Find a race")
+    st.caption("Votes shows only a provider-published race total. If the source lists candidate votes but no race total, Votes stays blank; candidate details remain available.")
     checks = " | ".join(f"{office}: {snapshot.checked_at.strftime('%Y-%m-%d %H:%M UTC')}"
                         for office, snapshot in snapshots.items())
     st.caption(f"{len(filtered):,} matching contests · Last HTTP attempts: {checks}")
@@ -269,6 +270,7 @@ with sources:
              "be recovered after a process restart if its filesystem persists and it is " 
              "at most 72 hours old; it is never treated as freshly verified until rechecked. " 
              "Cloud redeploys or instance replacement may discard the local cache.")
+    st.write("**Vote totals:** The race-wide Votes column is populated only when the provider publishes a valid race total. Candidate vote counts can establish that reporting has begun, but CivicPulse never sums a potentially partial candidate list to invent a race total.")
     st.write("**Timestamps:** The feed as-of value is the newest state update anywhere in that office feed, "
              "not necessarily the update time of the selected race.")
     st.write("**Election scope:** 435 House districts, 33 regular Senate contests, and two Senate specials (FL, OH). "

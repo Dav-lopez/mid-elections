@@ -43,15 +43,50 @@ class FeedTests(unittest.TestCase):
         self.assertIsNone(row["Votes"])
         self.assertIn("Not available", row["Coverage"])
 
-    def test_candidate_vote_totals_and_leader(self):
+    def test_candidate_votes_do_not_imply_published_race_total(self):
         raw = {"leader": "D", "called": False,
                "cands": [{"n": "A", "p": "D", "v": 150, "pct": 60},
                          {"n": "B", "p": "R", "v": 100, "pct": 40}]}
         row = normalize_race("House", "CA", "CA-12", raw, "Live counting", "2026-11-04T01:00:00+00:00")
-        self.assertEqual(row["Votes"], 250)
+        self.assertIsNone(row["Votes"], "Never infer a race total from candidate entries")
+        self.assertEqual([candidate["Votes"] for candidate in row["candidates"]], [150, 100])
         self.assertEqual(row["Leader (not winner)"], "D")
         self.assertEqual(row["Source call"], "—")
         self.assertEqual(row["Coverage"], "Results reported")
+
+    def test_partial_candidate_list_does_not_treat_missing_as_zero(self):
+        row = normalize_race("House", "TX", "TX-01", {
+            "cands": [{"n": "A", "v": 100}, {"n": "B"},
+                      {"n": "C", "v": "25"}],
+        }, "Live counting", None)
+        self.assertIsNone(row["Votes"])
+        self.assertEqual([candidate["Votes"] for candidate in row["candidates"]],
+                         [100, None, None])
+        self.assertEqual(row["Coverage"], "Results reported")
+
+    def test_explicit_provider_total_is_preserved_not_recomputed(self):
+        row = normalize_race("Senate", "TX", "TX", {
+            "total": 500, "cands": [{"n": "A", "v": 120},
+                                    {"n": "B", "v": 90}],
+        }, "Live counting", None)
+        self.assertEqual(row["Votes"], 500)
+        self.assertEqual(row["Coverage"], "Results reported")
+
+    def test_no_positive_votes_and_no_total_stays_unreported(self):
+        row = normalize_race("House", "TX", "TX-01", {
+            "cands": [{"n": "A", "v": 0}, {"n": "B", "v": None}],
+        }, "Awaiting results", None)
+        self.assertIsNone(row["Votes"])
+        self.assertEqual(row["Coverage"], "Listed, no votes yet")
+
+    def test_invalid_provider_total_is_not_replaced_by_candidate_sum(self):
+        for bad_total in (-1, True, "300"):
+            with self.subTest(total=bad_total):
+                row = normalize_race("House", "TX", "TX-01", {
+                    "total": bad_total, "cands": [{"n": "A", "v": 50}],
+                }, "Live counting", None)
+                self.assertIsNone(row["Votes"])
+                self.assertEqual(row["Coverage"], "Results reported")
 
     def test_zero_votes_are_not_reported_results(self):
         row = normalize_race("Senate", "GA", "GA", {"total": 0}, "Awaiting results", None)
