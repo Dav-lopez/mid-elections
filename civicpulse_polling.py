@@ -21,6 +21,9 @@ def fetch_offices(client, *, force=False):
     Schedule a new batch whenever the previous batch has completed. The
     client's next_due/backoff checks make premature scheduled calls cheap.
     A partially warmed cache waits only for offices with no snapshot yet.
+    Explicit user refreshes wait for the scheduled batch to complete so the
+    button does not immediately redisplay the previous snapshot. The client
+    still enforces force-rate limits and provider backoff.
     """
     with _BATCH_LOCK:
         futures = _INFLIGHT.get(client)
@@ -30,11 +33,10 @@ def fetch_offices(client, *, force=False):
                 for name in OFFICES
             }
             _INFLIGHT[client] = futures
-        cached = {
-            name: client._snapshots.get(name)
-            for name in OFFICES
-        }
+        # Some test doubles expose only fetch(); they have no persistent cache.
+        snapshots = getattr(client, "_snapshots", {})
+        cached = {name: snapshots.get(name) for name in OFFICES}
     return {
-        name: cached[name] if cached[name] is not None else futures[name].result()
+        name: futures[name].result() if force or cached[name] is None else cached[name]
         for name in OFFICES
     }
