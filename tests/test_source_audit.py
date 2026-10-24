@@ -39,6 +39,7 @@ class SourceKeyAuditTests(unittest.TestCase):
         self.assertEqual(audit.published, 0)
         self.assertEqual(audit.matched, 0)
         self.assertEqual(audit.unmatched, 0)
+        self.assertEqual(audit.not_published, 435)
         self.assertIn("do not imply zero votes", audit.detail)
 
     def test_known_and_unknown_keys_are_distinguished(self):
@@ -49,6 +50,9 @@ class SourceKeyAuditTests(unittest.TestCase):
         self.assertEqual(audit.published, 4)
         self.assertEqual(audit.matched, 2)
         self.assertEqual(audit.unmatched, 2)
+        self.assertEqual(audit.not_published, 33)
+        self.assertIn("33 tracked contest identifier(s) not published", audit.detail)
+        self.assertIn("not evidence of zero votes", audit.detail)
         self.assertEqual(audit.unmatched_examples, ("FL", "OH-EXTRA"))
         self.assertIn("review source-to-registry mapping", audit.detail)
         self.assertIn("identifiers do not prove votes", audit.detail)
