@@ -102,6 +102,7 @@ for seat in registry():
         row["Coverage"] = coverage_status(seat["State"], feed is not None, False)
     rows.append(row)
 
+race_by_key = {(row["Chamber"], row["Seat"]): row for row in rows}
 frame = pd.DataFrame([{k: v for k, v in row.items() if k != "candidates"} for row in rows])
 metrics = national_coverage_metrics(rows)
 reported = metrics["reported"]
@@ -236,11 +237,12 @@ with explorer:
     st.download_button("Download filtered CSV", filtered.to_csv(index=False).encode("utf-8"),
                        file_name="civicpulse_2026_filtered.csv", mime="text/csv")
     if not filtered.empty:
-        choices = [(r["Chamber"], r["Seat"]) for r in rows if
-                   ((filtered["Chamber"] == r["Chamber"]) & (filtered["Seat"] == r["Seat"])).any()]
+        # The filtered frame already contains the matching unique race keys.
+        # Avoid an O(races × filtered rows) pandas mask for every page rerun.
+        choices = list(filtered[["Chamber", "Seat"]].itertuples(index=False, name=None))
         selection = st.selectbox("Race details", choices,
                                 format_func=lambda item: f"{item[0]} · {item[1]}")
-        detail = next(r for r in rows if (r["Chamber"], r["Seat"]) == selection)
+        detail = race_by_key[selection]
         st.subheader(f"{detail['Chamber']} · {detail['Seat']}")
         st.caption(f"{detail['Coverage']} · {detail['Feed health']} · "
                    f"Feed as-of (latest update across races): {detail['Feed as-of (UTC)']}")
