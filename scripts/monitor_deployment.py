@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -83,21 +84,58 @@ def check_feed(office: str, source: str, opener=urlopen) -> Check:
         return Check(office, "FAIL", "Invalid endpoint, response or API contract")
 
 
-def check_site(site: str, opener=urlopen) -> Check:
-    """Streamlit server readiness only, not a full browser/application render."""
+def _wake_site(site: str, opener) -> None:
+    """Best-effort read-only wake request on the configured HTTPS origin.
+
+    Streamlit Community Cloud may redirect an idle app before its health
+    endpoint becomes available. The root request is not a health success.
+    """
+    parts = _https_parts(site)
+    root = urlunsplit((parts.scheme, parts.netloc, "/", "", ""))
+    try:
+        _read(root, "text/html", opener)
+    except (HTTPError, URLError, TimeoutError, OSError,
+            ValueError, TypeError, UnicodeError):
+        pass
+
+
+def check_site(site: str, opener=urlopen, sleeper=time.sleep) -> Check:
+    """Require an actual 'ok' response, even after a cold-start retry.
+
+    A redirect, gateway failure or HTML login page is never counted as PASS.
+    Retry only 303/502/503 to avoid misclassifying transient cold starts as
+    permanent outages. Inject sleeper in tests to keep them deterministic.
+    """
     if not site.strip():
         return Check("Deployment", "SKIP", "CIVICPULSE_SITE_URL not configured")
     try:
-        body = _read(_site_health_url(site), "text/plain", opener)
-        if body.strip().lower() != b"ok":
-            raise ValueError("Unexpected health response")
-        return Check("Deployment", "PASS", "Streamlit server health endpoint responded")
-    except HTTPError as exc:
-        return Check("Deployment", "FAIL", f"HTTP {exc.code}")
+        url = _site_health_url(site)
+        for attempt in range(3):
+            try:
+                body = _read(url, "text/plain", opener)
+                if body.strip().lower() != b"ok":
+                    raise ValueError("Unexpected health response")
+                detail = "Streamlit server health endpoint responded"
+                if attempt:
+                    detail += " after transient response retry"
+                return Check("Deployment", "PASS", detail)
+            except HTTPError as exc:
+                if exc.code in (303, 502, 503) and attempt < 2:
+                    if exc.code == 303 and attempt == 0:
+                        _wake_site(site, opener)
+                    sleeper(3 * (attempt + 1))
+                    continue
+                if exc.code == 303:
+                    return Check(
+                        "Deployment", "FAIL",
+                        "HTTP 303 redirect persisted; app may be sleeping or access-gated",
+                    )
+                return Check("Deployment", "FAIL", f"HTTP {exc.code}")
     except (URLError, TimeoutError, OSError) as exc:
         return Check("Deployment", "FAIL", f"Network failure ({type(exc).__name__})")
     except (ValueError, TypeError, UnicodeError):
         return Check("Deployment", "FAIL", "Invalid URL or health response")
+    return Check("Deployment", "FAIL", "Health endpoint did not respond")
 
 
 def run_checks(source: str, site: str, opener=urlopen) -> list[Check]:
