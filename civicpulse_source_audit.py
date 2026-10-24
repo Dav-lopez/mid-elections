@@ -19,6 +19,7 @@ class KeyAudit:
     published: int
     matched: int
     unmatched: int
+    not_published: int
     unmatched_examples: tuple[str, ...]
 
     @property
@@ -36,6 +37,8 @@ class KeyAudit:
                 f"; {self.unmatched} unmatched provider identifier(s) "
                 f"(sample: {examples}) — review source-to-registry mapping"
             )
+        message += (f"; {self.not_published} tracked contest identifier(s) not published "
+                    "in this snapshot (not evidence of zero votes or no election)")
         return message + "; identifiers do not prove votes were reported"
 
 
@@ -58,6 +61,7 @@ def audit_feed_keys(feed: Feed) -> KeyAudit:
         published=len(published),
         matched=len(published & expected),
         unmatched=len(unknown),
+        not_published=len(expected - published),
         unmatched_examples=tuple(_safe_identifier(key)
                                  for key in sorted(unknown)[:5]),
     )
