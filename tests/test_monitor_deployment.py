@@ -115,7 +115,7 @@ class HealthMonitorTests(unittest.TestCase):
         redirect = HTTPError("https://example.streamlit.app/_stcore/health",
                              303, "See Other", None, None)
         opener = Opener(redirect, Response(b"<html>Starting app</html>"),
-                        Response(b"ok\\n"))
+                        Response(b"ok\n"))
         delays = []
         check = check_site("https://example.streamlit.app", opener,
                            sleeper=delays.append)
