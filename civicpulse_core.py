@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from math import isfinite
 from typing import Any
 
 
@@ -104,7 +105,7 @@ def percent(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     number = float(value)
-    if not 0 <= number <= 100:
+    if not isfinite(number) or not 0 <= number <= 100:
         return None
     return number
 
