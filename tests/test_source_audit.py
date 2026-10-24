@@ -3,7 +3,7 @@ import json
 import unittest
 
 from civicpulse_core import parse_feed
-from civicpulse_source_audit import audit_feed_keys
+from civicpulse_source_audit import audit_feed_keys, reconciliation_rows
 from scripts.monitor_deployment import check_feed
 
 
@@ -72,6 +72,36 @@ class SourceKeyAuditTests(unittest.TestCase):
         audit = audit_feed_keys(parse_feed(fixture(races=races), "House"))
         self.assertEqual(audit.unmatched, 20)
         self.assertEqual(len(audit.unmatched_examples), 5)
+
+    def test_complete_reconciliation_distinguishes_observed_missing_and_unknown(self):
+        feed = parse_feed(fixture("Senate", races={
+            "TX": {}, "FL-SPECIAL": {}, "FL": {}, "=malicious": {},
+        }), "Senate")
+        rows = reconciliation_rows(feed)
+        self.assertEqual(len(rows), 37)  # 35 tracked + 2 unmatched
+        observed = [row for row in rows
+                    if row["Identifier audit"] == "Observed in validated snapshot"]
+        missing = [row for row in rows
+                   if row["Identifier audit"] == "Not published in snapshot"]
+        unmatched = [row for row in rows
+                     if row["Identifier audit"] == "Unmatched provider identifier"]
+        self.assertEqual(len(observed), 2)
+        self.assertEqual(len(missing), 33)
+        self.assertEqual(len(unmatched), 2)
+        self.assertTrue(all(row["State"] == "Unverified" for row in unmatched))
+        self.assertTrue(all(row["Tracked contest"] == "" for row in unmatched))
+        self.assertTrue(all(not row["Provider identifier"].startswith("=")
+                            for row in unmatched))
+        self.assertEqual({row["Provider identifier"] for row in unmatched},
+                         {"FL", "?MALICIOUS"})
+        self.assertTrue(all(row["Provider identifier"] == "" for row in missing))
+
+    def test_reconciliation_only_reports_office_with_validated_feed(self):
+        rows = reconciliation_rows(parse_feed(fixture(), "House"))
+        self.assertEqual(len(rows), 435)
+        self.assertEqual({row["Office"] for row in rows}, {"House"})
+        self.assertTrue(all(row["Identifier audit"] == "Not published in snapshot"
+                            for row in rows))
 
     def test_health_monitor_reports_mismatch_without_failing_valid_feed(self):
         def opener(request, timeout):
