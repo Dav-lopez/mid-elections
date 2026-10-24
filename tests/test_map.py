@@ -45,6 +45,38 @@ class CoverageMapTests(unittest.TestCase):
         self.assertEqual(tx["Status"], "Some votes reported")
         self.assertFalse(tx["Partial outage"])
 
+    def test_mixed_state_counts_and_partial_outage_remain_isolated(self):
+        rows = [
+            {"State": "TX", "Chamber": "House", "Coverage": "Results reported"},
+            {"State": "TX", "Chamber": "Senate", "Coverage": "Listed, no votes yet"},
+            {"State": "TX", "Chamber": "House", "Coverage": "Race absent from provider feed"},
+            {"State": "AZ", "Chamber": "House", "Coverage": "Results reported"},
+            {"State": "UNKNOWN", "Chamber": "House", "Coverage": "Results reported"},
+        ]
+        result = state_coverage(rows, {"Senate"})
+        self.assertEqual(len(result), 50)
+        data = {item["State"]: item for item in result}
+        self.assertEqual(data["TX"]["Contests tracked"], 3)
+        self.assertEqual(data["TX"]["Races listed"], 2)
+        self.assertEqual(data["TX"]["Races with votes"], 1)
+        self.assertEqual(data["TX"]["Status"], "Provider unavailable")
+        self.assertTrue(data["TX"]["Partial outage"])
+        self.assertEqual(data["AZ"]["Status"], "Some votes reported")
+        self.assertFalse(data["AZ"]["Partial outage"])
+        self.assertEqual(data["AZ"]["Races with votes"], 1)
+        self.assertEqual(data["CA"]["Contests tracked"], 0)
+
+    def test_large_synthetic_feed_aggregates_without_double_counting(self):
+        rows = [
+            {"State": "TX", "Chamber": "House",
+             "Coverage": "Results reported" if i % 3 == 0 else "Listed, no votes yet"}
+            for i in range(3000)
+        ]
+        tx = {item["State"]: item for item in state_coverage(rows)}["TX"]
+        self.assertEqual(tx["Contests tracked"], 3000)
+        self.assertEqual(tx["Races listed"], 3000)
+        self.assertEqual(tx["Races with votes"], 1000)
+
     def test_status_palette_is_complete(self):
         self.assertEqual(len(STATUS_LABELS), 5)
 
