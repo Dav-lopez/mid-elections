@@ -30,6 +30,7 @@ Connect this repository to Streamlit Community Cloud, select the `main` branch a
 - The app's documented adapter list (recorded **2026-09-27**) covers **22 states**: AR, AZ, CO, CT, FL, GA, IA, ID, IN, LA, MI, MN, NC, PA, RI, SC, TX, UT, VA, VT, WA, WV. An adapter is not a promise of data for every race.
 - Florida and Ohio special Senate elections have distinct registry identifiers. Their inclusion does not imply that the provider supplies both results.
 - The publisher's `as_of` timestamp is the newest update anywhere in an office feed, **not** the update time of each race.
+- Race identifiers are normalized to uppercase. Empty, whitespace-padded, or case-colliding identifiers invalidate a response rather than silently replacing a contest; the dashboard retains the last validated snapshot with an error warning. This protects local parsing integrity, not provider coverage or source accuracy.
 - The map does not represent partisan winners or forecast outcomes. Source outages take precedence in its availability classification, even when last-known results remain visible.
 
 ## HTTP resilience

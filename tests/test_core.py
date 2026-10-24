@@ -38,6 +38,23 @@ class FeedTests(unittest.TestCase):
         with self.assertRaises(FeedValidationError):
             parse_feed(payload(races=[]), "House")
 
+    def test_case_normalization_keeps_single_identifier(self):
+        feed = parse_feed(payload(races={"az-01": {"total": 12}}), "House")
+        self.assertEqual(feed.races, {"AZ-01": {"total": 12}})
+
+    def test_case_colliding_identifiers_rejected_not_overwritten(self):
+        with self.assertRaisesRegex(FeedValidationError, "Duplicate race identifier"):
+            parse_feed(payload(races={
+                "az-01": {"total": 12},
+                "AZ-01": {"total": 99},
+            }), "House")
+
+    def test_empty_and_whitespace_padded_identifiers_rejected(self):
+        for identifier in ("", " AZ-01", "AZ-01 ", "  "):
+            with self.subTest(identifier=identifier):
+                with self.assertRaisesRegex(FeedValidationError, "Invalid race identifier"):
+                    parse_feed(payload(races={identifier: {"total": 12}}), "House")
+
     def test_missing_race_not_zero(self):
         row = normalize_race("House", "CA", "CA-12", None, "Awaiting results", None)
         self.assertIsNone(row["Votes"])

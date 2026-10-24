@@ -108,6 +108,23 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(later.feed, initial.feed)
         self.assertIn("FeedValidationError", later.error)
 
+    def test_case_colliding_races_preserve_last_validated_snapshot(self):
+        valid = payload(races={"AZ-01": {"total": 12}})
+        ambiguous = payload(races={
+            "az-01": {"total": 12},
+            "AZ-01": {"total": 99},
+        })
+        session = Session(Response(data=valid), Response(data=ambiguous))
+        client = self.client(session)
+        first = client.fetch("House")
+        self.t = 60
+        second = client.fetch("House")
+        self.assertEqual(second.feed, first.feed)
+        self.assertEqual(second.feed.races["AZ-01"]["total"], 12)
+        self.assertIn("Duplicate race identifier", second.error)
+        self.assertEqual(second.failures, 1)
+        self.assertIn("last-known", second.status)
+
     def test_no_snapshot_on_initial_failure(self):
         session = Session(Response(status=503))
         result = self.client(session).fetch("House")
