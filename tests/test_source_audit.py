@@ -82,7 +82,9 @@ class SourceKeyAuditTests(unittest.TestCase):
         self.assertEqual(check.status, "PASS")
         self.assertIn("1/2 published race identifiers match", check.detail)
         self.assertIn("FL", check.detail)
-        self.assertNotIn("zero votes", check.detail)
+        self.assertIn("tracked contest identifier(s) not published", check.detail)
+        self.assertIn("not evidence of zero votes or no election", check.detail)
+        self.assertNotIn("0 votes reported", check.detail)
 
     def test_health_monitor_does_not_invent_coverage_on_empty_feed(self):
         def opener(request, timeout):
@@ -92,6 +94,7 @@ class SourceKeyAuditTests(unittest.TestCase):
         self.assertEqual(check.status, "PASS")
         self.assertIn("0 race identifiers published", check.detail)
         self.assertNotIn("435/435", check.detail)
+        self.assertIn("do not imply zero votes", check.detail)
 
 
 if __name__ == "__main__":
