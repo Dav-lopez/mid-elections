@@ -13,7 +13,7 @@ from civicpulse_disk_cache import DiskFeedCache
 from civicpulse_polling import fetch_offices
 from civicpulse_map import STATUS_LABELS, STATUS_COLORS, state_coverage
 from civicpulse_explorer import candidate_vote_rows, state_contests
-from civicpulse_source_audit import audit_feed_keys
+from civicpulse_source_audit import audit_feed_keys, reconciliation_rows
 from civicpulse_registry import HOUSE, SENATE_2026, SENATE_SPECIAL_2026, STATES, registry
 from civicpulse_core import (PROVIDER_STATES, coverage_status, national_coverage_metrics,
                              normalize_race, refresh_seconds, format_feed_timestamp)
@@ -270,6 +270,23 @@ with sources:
         st.write(f"**{office}:** {audit.detail}{suffix}")
         if audit.unmatched:
             st.warning(f"{office}: {audit.unmatched} provider race identifier(s) do not match tracked contests. Verify the provider mapping before adding aliases; no results are assigned to unmatched identifiers.")
+    observed_feeds = [snapshot.feed for snapshot in snapshots.values()
+                      if snapshot.feed is not None]
+    if observed_feeds:
+        key_rows = [entry for feed in observed_feeds
+                    for entry in reconciliation_rows(feed)]
+        st.download_button(
+            "Download complete source identifier reconciliation CSV",
+            pd.DataFrame(key_rows).to_csv(index=False).encode("utf-8"),
+            file_name="civicpulse_identifier_reconciliation.csv",
+            mime="text/csv",
+        )
+        st.caption(
+            "This export compares tracked contest keys with identifiers in "
+            "the latest validated snapshots only. A missing identifier does "
+            "not mean zero votes or no election. Unmatched source identifiers "
+            "are sanitized and require manual verification before mapping."
+        )
     st.write("**Provider:** [Open America election results](https://openamerica.io/elections/api/). "
              "The feed integrates official returns from participating states and does not call races.")
     st.write("**Refresh:** While a feed is live it is checked every 60 seconds; before counting, "
