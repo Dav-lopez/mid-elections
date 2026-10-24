@@ -92,7 +92,7 @@ def reconciliation_rows(feed: Feed) -> list[dict[str, str]]:
             "Identifier audit": ("Observed in validated snapshot" if observed
                                  else "Not published in snapshot"),
         })
-    for key in sorted(published - expected):
+    for key in sorted(published - expected.keys()):
         rows.append({
             "Office": feed.office,
             "State": "Unverified",
