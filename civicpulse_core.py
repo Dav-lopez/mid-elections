@@ -55,7 +55,16 @@ def parse_feed(payload: Any, office: str, year: int = 2026) -> Feed:
     for key, race in races.items():
         if not isinstance(key, str) or not isinstance(race, dict):
             raise FeedValidationError("Invalid race entry")
-        cleaned[key.upper()] = race
+        if not key or key != key.strip():
+            raise FeedValidationError("Invalid race identifier")
+        canonical = key.upper()
+        if canonical in cleaned:
+            # Silent overwrites can replace one contest's results with another.
+            # Fail the whole response and retain the last validated snapshot.
+            raise FeedValidationError(
+                f"Duplicate race identifier after case normalization: {canonical}"
+            )
+        cleaned[canonical] = race
     timestamp = payload.get("as_of")
     if timestamp is not None:
         if not isinstance(timestamp, str):
