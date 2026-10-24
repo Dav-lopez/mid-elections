@@ -18,35 +18,53 @@ STATUS_LABELS = (
 )
 STATUS_COLORS = ("#B4BEC9", "#E5E9EF", "#F4D6A1", "#86B9D1", "#167F79")
 
+_LISTED = frozenset(("Results reported", "Listed, no votes yet"))
+
 
 def state_coverage(rows: list[dict[str, Any]], unavailable_offices: set[str] | None = None
                    ) -> list[dict[str, Any]]:
-    """Return one independently verifiable availability summary per state.
+    """Aggregate availability in one row pass, then emit states in registry order.
 
-    A failed House or Senate request cannot silently become a zero-result state.
-    When there is a partial outage, flag it even if other races are reporting.
+    O(number of rows + number of states), rather than scanning every race for
+    each state. A partial House/Senate outage still takes precedence over any
+    last-known votes, without treating missing results as zero.
     """
     unavailable = unavailable_offices or set()
+    # Preserve the original state ordering and ignore rows outside the registry.
+    grouped = {
+        state: {"listed": 0, "reported": 0, "tracked": 0, "offices": set()}
+        for state in STATES
+    }
+    for row in rows:
+        entry = grouped.get(row.get("State"))
+        if entry is None:
+            continue
+        entry["tracked"] += 1
+        entry["offices"].add(row.get("Chamber"))
+        coverage = row.get("Coverage")
+        if coverage in _LISTED:
+            entry["listed"] += 1
+        if coverage == "Results reported":
+            entry["reported"] += 1
+
     summaries = []
-    for state in STATES:
-        local = [r for r in rows if r.get("State") == state]
-        listed = sum(r.get("Coverage") in ("Results reported", "Listed, no votes yet") for r in local)
-        reported = sum(r.get("Coverage") == "Results reported" for r in local)
-        active_offices = {r.get("Chamber") for r in local}
-        has_outage = bool(active_offices & unavailable)
+    for state, entry in grouped.items():
+        has_outage = bool(entry["offices"] & unavailable)
         if has_outage:
             status = "Provider unavailable"
         elif state not in PROVIDER_STATES:
             status = "State not supported"
-        elif reported:
+        elif entry["reported"]:
             status = "Some votes reported"
-        elif listed:
+        elif entry["listed"]:
             status = "Races listed; no votes"
         else:
             status = "No races published"
         summaries.append({
             "State": state, "Status": status,
-            "Races listed": listed, "Races with votes": reported,
-            "Contests tracked": len(local), "Partial outage": has_outage,
+            "Races listed": entry["listed"],
+            "Races with votes": entry["reported"],
+            "Contests tracked": entry["tracked"],
+            "Partial outage": has_outage,
         })
     return summaries
