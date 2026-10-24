@@ -66,6 +66,13 @@ unmatched identifier prompts manual mapping review but does not fail a valid fee
 The source may use different IDs for special contests, so no automatic aliasing is
 performed without provider verification.
 
+The **Data & methodology** tab now displays the same identifier reconciliation for
+each office directly in the dashboard, including a warning when published keys do
+not match tracked contests. When the latest request fails, the audit is explicitly
+labeled as using the last validated snapshot; when no validated feed exists, the
+audit is unavailable. Unmatched keys never get assigned to a tracked contest,
+and the counts are not evidence of reported votes or complete provider coverage.
+
 Each run writes a component-by-component GitHub Actions summary and fails if a
 source contract or configured site-health check fails. To receive notifications,
 configure your GitHub Actions workflow-failure notifications or an independent
@@ -83,7 +90,7 @@ python -m compileall -q app.py civicpulse_core.py civicpulse_client.py civicpuls
 python -m unittest discover -s tests -v
 ```
 
-GitHub Actions runs compilation, unit tests, and Streamlit AppTest script execution on feature pushes and pull requests. AppTest exercises an empty-but-valid source, a provider outage, and a **synthetic partial candidate return** with deterministic fixtures. The partial-return scenario selects a state in the running Streamlit script, checks candidate vote details, and verifies that an unpublished race total remains blank and an uncalled leader is not presented as a winner. These execution tests detect UI regressions that a server health endpoint alone can miss. Mocked HTTP tests cover conditional requests, timeouts, backoff, recovery, isolated HTTP sessions, and 120 simultaneous synthetic viewer reruns sharing at most two polling workers. Pure tests cover registry completeness, map aggregation, state navigation, and candidate vote filtering. These checks **do not** establish live provider availability, actual election-night performance, visual responsiveness, or browser-level accessibility.
+GitHub Actions runs compilation, unit tests, and Streamlit AppTest script execution on feature pushes and pull requests. AppTest exercises an empty-but-valid source, a provider outage, a **synthetic partial candidate return**, and an unmatched synthetic provider race identifier with deterministic fixtures. The partial-return scenario selects a state in the running Streamlit script, checks candidate vote details, and verifies that an unpublished race total remains blank and an uncalled leader is not presented as a winner. These execution tests detect UI regressions that a server health endpoint alone can miss. Mocked HTTP tests cover conditional requests, timeouts, backoff, recovery, isolated HTTP sessions, and 120 simultaneous synthetic viewer reruns sharing at most two polling workers. Pure tests cover registry completeness, map aggregation, state navigation, and candidate vote filtering. These checks **do not** establish live provider availability, actual election-night performance, visual responsiveness, or browser-level accessibility.
 
 ## Browser-level smoke tests
 
