@@ -45,6 +45,42 @@ class WarmCacheTests(unittest.TestCase):
         finally:
             client.release.set()
 
+    def test_manual_refresh_waits_and_returns_updated_snapshots(self):
+        client = ControlledClient({"House": "House-old", "Senate": "Senate-old"})
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                waiting = pool.submit(fetch_offices, client, force=True)
+                self.assertTrue(client.entered.wait(3))
+                self.assertFalse(waiting.done(),
+                                 "manual refresh returned stale cache before checking")
+                client.release.set()
+                self.assertEqual(waiting.result(timeout=3), {
+                    "House": "House-new", "Senate": "Senate-new"
+                })
+            with client.lock:
+                self.assertEqual(len(client.calls), 2)
+        finally:
+            client.release.set()
+
+    def test_manual_refresh_joins_inflight_background_batch(self):
+        client = ControlledClient({"House": "House-old", "Senate": "Senate-old"})
+        try:
+            self.assertEqual(fetch_offices(client), {
+                "House": "House-old", "Senate": "Senate-old"
+            })
+            self.assertTrue(client.entered.wait(3))
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                waiting = pool.submit(fetch_offices, client, force=True)
+                self.assertFalse(waiting.done())
+                client.release.set()
+                self.assertEqual(waiting.result(timeout=3), {
+                    "House": "House-new", "Senate": "Senate-new"
+                })
+            with client.lock:
+                self.assertEqual(len(client.calls), 2)
+        finally:
+            client.release.set()
+
     def test_cold_start_waits_for_first_snapshot(self):
         client = ControlledClient({})
         try:
