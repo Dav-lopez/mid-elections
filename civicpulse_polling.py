@@ -1,8 +1,9 @@
-"""Coalesced concurrent office polling shared by Streamlit viewer sessions.
+"""Coalesced office polling with nonblocking warm-cache viewer reads.
 
-At most one pair of office jobs is submitted for concurrent viewers using the
-same client. This bounds queued work during a burst, but viewers still wait for
-the initial slow provider response; nonblocking background refresh is future work.
+A viewer with both office snapshots never waits for a slow upstream refresh.
+Cold-start viewers still wait for the initial attempt so the UI can distinguish
+unavailable data from valid provider results. All feed safety rules remain in
+ElectionFeedClient.fetch.
 """
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
@@ -15,10 +16,11 @@ _INFLIGHT = WeakKeyDictionary()
 
 
 def fetch_offices(client, *, force=False):
-    """Share one in-flight batch across concurrent callers of the same client.
+    """Share in-flight work, returning cached snapshots without waiting.
 
-    A forced refresh arriving while another batch is active shares that batch;
-    the client's own rate-limit and retry policy remains authoritative.
+    Schedule a new batch whenever the previous batch has completed. The
+    client's next_due/backoff checks make premature scheduled calls cheap.
+    A partially warmed cache waits only for offices with no snapshot yet.
     """
     with _BATCH_LOCK:
         futures = _INFLIGHT.get(client)
@@ -28,4 +30,11 @@ def fetch_offices(client, *, force=False):
                 for name in OFFICES
             }
             _INFLIGHT[client] = futures
-    return {name: futures[name].result() for name in OFFICES}
+        cached = {
+            name: client._snapshots.get(name)
+            for name in OFFICES
+        }
+    return {
+        name: cached[name] if cached[name] is not None else futures[name].result()
+        for name in OFFICES
+    }
