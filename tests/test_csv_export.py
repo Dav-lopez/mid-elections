@@ -70,7 +70,7 @@ class CsvExportTests(unittest.TestCase):
         pd.testing.assert_frame_equal(frame, original)
 
     def test_additional_invisible_formula_prefixes(self):
-        for prefix in ("\\u200c", "\\u200d", "\\u2060", "\\u00a0", "\\u202f"):
+        for prefix in (chr(0x200c), chr(0x200d), chr(0x2060), chr(0x00a0), chr(0x202f)):
             value = prefix + "=1+1"
             with self.subTest(prefix=repr(prefix)):
                 self.assertEqual(neutralize_csv_cell(value), "'" + value)
