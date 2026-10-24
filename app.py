@@ -13,6 +13,7 @@ from civicpulse_disk_cache import DiskFeedCache
 from civicpulse_polling import fetch_offices
 from civicpulse_map import STATUS_LABELS, STATUS_COLORS, state_coverage
 from civicpulse_explorer import candidate_vote_rows, state_contests
+from civicpulse_source_audit import audit_feed_keys
 from civicpulse_registry import HOUSE, SENATE_2026, SENATE_SPECIAL_2026, STATES, registry
 from civicpulse_core import (PROVIDER_STATES, coverage_status, national_coverage_metrics,
                              normalize_race, refresh_seconds, format_feed_timestamp)
@@ -254,6 +255,19 @@ with explorer:
 
 with sources:
     st.subheader("Transparency and source status")
+    st.markdown("**Observed source-to-registry identifier audit**")
+    st.caption("Counts describe identifiers in the latest validated provider response, not votes, winners, or verified race coverage. Unknown identifiers require manual mapping review.")
+    for office in ("House", "Senate"):
+        snapshot = snapshots[office]
+        if snapshot.feed is None:
+            st.info(f"{office}: No validated feed is available for identifier reconciliation.")
+            continue
+        audit = audit_feed_keys(snapshot.feed)
+        suffix = (" (last-known validated data; latest request failed)"
+                  if snapshot.error else "")
+        st.write(f"**{office}:** {audit.detail}{suffix}")
+        if audit.unmatched:
+            st.warning(f"{office}: {audit.unmatched} provider race identifier(s) do not match tracked contests. Verify the provider mapping before adding aliases; no results are assigned to unmatched identifiers.")
     st.write("**Provider:** [Open America election results](https://openamerica.io/elections/api/). "
              "The feed integrates official returns from participating states and does not call races.")
     st.write("**Refresh:** While a feed is live it is checked every 60 seconds; before counting, "
