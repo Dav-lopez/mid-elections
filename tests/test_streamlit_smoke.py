@@ -1,7 +1,7 @@
 """Exercise the actual Streamlit script, not only the server's /health endpoint.
 
-All provider responses are synthetic *empty* contract fixtures or explicit
-network failures. These tests never represent actual election returns.
+All provider responses are synthetic contract fixtures (empty, partial, or
+unavailable). These tests never represent actual election returns.
 """
 from __future__ import annotations
 
@@ -23,8 +23,9 @@ class EmptyFeedResponse:
     status_code = 200
     headers = {}
 
-    def __init__(self, office):
+    def __init__(self, office, races=None):
         self.office = office
+        self.races = {} if races is None else races
 
     def raise_for_status(self):
         return None
@@ -40,7 +41,7 @@ class EmptyFeedResponse:
             "final": False,
             "as_of": None,
             "source": "test-fixture-not-real-results",
-            "races": {},
+            "races": self.races,
         }
 
 
@@ -78,6 +79,54 @@ class StreamlitExecutionSmokeTests(unittest.TestCase):
         self.assertEqual(app.metric[1].value, "35")
         self.assertEqual(app.metric[2].value, "0")
         self.assertEqual(app.metric[3].value, "0")
+        self.assertEqual(len(app.warning), 0)
+
+    def test_partial_candidate_returns_render_without_inferred_race_total(self):
+        """A partial synthetic race must show candidate votes, not a made-up total or call."""
+        partial_house = {
+            "AZ-01": {
+                "cands": [
+                    {"n": "Synthetic Candidate A", "p": "I", "v": 120, "pct": 60},
+                    {"n": "Synthetic Candidate B", "p": "I", "v": 80, "pct": 40},
+                ],
+                "leader": "Synthetic Candidate A",
+                "winner": "Synthetic Candidate A",
+                "called": False,
+                # No published race-wide total: candidate sums must not fill it.
+            }
+        }
+
+        def respond(*args, **kwargs):
+            office = kwargs["params"]["office"]
+            return EmptyFeedResponse(office, partial_house if office == "House" else {})
+
+        with patch.object(requests.Session, "get", side_effect=respond) as get:
+            app = self._run()
+            self.assertEqual(app.metric[2].value, "1", "One synthetic race reports votes")
+            self.assertEqual(app.metric[3].value, "1", "Only one race is source-listed")
+            spotlight = next(widget for widget in app.selectbox
+                             if widget.label == "Inspect state")
+            spotlight.set_value("AZ").run()
+
+        self.assertEqual(get.call_count, 2, "State selection must reuse the shared feed cache")
+        self.assertEqual(len(app.exception), 0)
+        race_tables = [item.value for item in app.dataframe
+                       if {"Seat", "Votes", "Source call"}.issubset(item.value.columns)]
+        self.assertTrue(race_tables, "The state spotlight must show its race table")
+        az_races = [table.loc[table["Seat"] == "AZ-01"]
+                    for table in race_tables if "AZ-01" in table["Seat"].values]
+        self.assertTrue(az_races, "The AZ-01 synthetic race must be visible")
+        self.assertTrue(az_races[0]["Votes"].isna().all(),
+                        "Never infer a total from the partial candidate list")
+        self.assertEqual(az_races[0]["Source call"].iloc[0], "—",
+                         "An uncalled provider leader is not a winner")
+
+        candidate_tables = [item.value for item in app.dataframe
+                            if {"Candidate", "Votes"}.issubset(item.value.columns)]
+        self.assertTrue(candidate_tables, "Candidate breakdown must be rendered")
+        votes = dict(zip(candidate_tables[0]["Candidate"], candidate_tables[0]["Votes"]))
+        self.assertEqual(votes, {"Synthetic Candidate A": 120,
+                                 "Synthetic Candidate B": 80})
         self.assertEqual(len(app.warning), 0)
 
     def test_source_outage_still_renders_a_warning_and_no_vote_totals(self):
