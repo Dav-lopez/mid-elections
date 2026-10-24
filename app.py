@@ -9,6 +9,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 from civicpulse_client import ElectionFeedClient
+from civicpulse_csv import spreadsheet_safe_csv
 from civicpulse_disk_cache import DiskFeedCache
 from civicpulse_polling import fetch_offices
 from civicpulse_map import STATUS_LABELS, STATUS_COLORS, state_coverage
@@ -147,7 +148,7 @@ with overview:
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     with st.expander("Accessible state-by-state coverage table"):
         st.dataframe(map_frame, hide_index=True, use_container_width=True)
-        st.download_button("Download state coverage CSV", map_frame.to_csv(index=False).encode("utf-8"),
+        st.download_button("Download state coverage CSV", spreadsheet_safe_csv(map_frame),
                            file_name="civicpulse_state_coverage.csv", mime="text/csv")
     st.subheader("State spotlight")
     st.caption("Select a state to inspect its tracked races. This keyboard-accessible selector also works when the map is difficult to use on mobile.")
@@ -234,7 +235,7 @@ with explorer:
     st.dataframe(filtered, hide_index=True, use_container_width=True,
                  column_config={"Votes": st.column_config.NumberColumn(format="%d"),
                                 "Precincts (%)": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%")})
-    st.download_button("Download filtered CSV", filtered.to_csv(index=False).encode("utf-8"),
+    st.download_button("Download filtered CSV", spreadsheet_safe_csv(filtered),
                        file_name="civicpulse_2026_filtered.csv", mime="text/csv")
     if not filtered.empty:
         # The filtered frame already contains the matching unique race keys.
@@ -277,7 +278,7 @@ with sources:
                     for entry in reconciliation_rows(feed)]
         st.download_button(
             "Download complete source identifier reconciliation CSV",
-            pd.DataFrame(key_rows).to_csv(index=False).encode("utf-8"),
+            spreadsheet_safe_csv(pd.DataFrame(key_rows)),
             file_name="civicpulse_identifier_reconciliation.csv",
             mime="text/csv",
         )
