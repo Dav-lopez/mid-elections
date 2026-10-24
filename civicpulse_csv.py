@@ -11,7 +11,7 @@ import csv
 import pandas as pd
 
 _FORMULA_PREFIXES = frozenset("=+-@＝＋－＠")
-_LEADING_IGNORABLE = " \t\r\n\v\f\x00\ufeff\u200b"
+_LEADING_IGNORABLE = " \t\r\n\v\f\x00\ufeff\u200b\u200c\u200d\u2060\u00a0\u202f"
 
 
 def neutralize_csv_cell(value: object) -> object:
@@ -25,10 +25,13 @@ def neutralize_csv_cell(value: object) -> object:
 
 
 def spreadsheet_safe_csv(frame: pd.DataFrame) -> bytes:
-    """Quote every CSV field and neutralize untrusted text at export time."""
+    """Quote every CSV field and neutralize untrusted text, including headers."""
     safe = frame.copy()
     for column in safe.columns:
-        if (pd.api.types.is_object_dtype(safe[column].dtype)
-                or pd.api.types.is_string_dtype(safe[column].dtype)):
+        dtype = safe[column].dtype
+        if (pd.api.types.is_object_dtype(dtype)
+                or pd.api.types.is_string_dtype(dtype)
+                or isinstance(dtype, pd.CategoricalDtype)):
             safe[column] = safe[column].map(neutralize_csv_cell)
+    safe.columns = [neutralize_csv_cell(column) for column in safe.columns]
     return safe.to_csv(index=False, quoting=csv.QUOTE_ALL).encode("utf-8")
