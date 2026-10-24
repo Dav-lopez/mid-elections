@@ -26,8 +26,12 @@ class Response:
         self.status_code = status
         self.data = data
         self.headers = dict(headers or {})
+        self.closed = False
         if etag:
             self.headers["ETag"] = etag
+
+    def close(self):
+        self.closed = True
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -61,6 +65,24 @@ class ClientTests(unittest.TestCase):
         return ElectionFeedClient(
             session=session, clock=lambda: self.t, utcnow=lambda: self.when,
         )
+
+    def test_responses_closed_on_success_and_http_failure(self):
+        good = Response(data=payload())
+        bad = Response(status=503)
+        client = self.client(Session(good, bad))
+        client.fetch("House")
+        self.assertTrue(good.closed)
+        self.t = 60
+        client.fetch("House")
+        self.assertTrue(bad.closed)
+
+    def test_304_retry_closes_both_responses(self):
+        invalid_304 = Response(status=304)
+        fresh = Response(data=payload())
+        result = self.client(Session(invalid_304, fresh)).fetch("House")
+        self.assertIsNone(result.error)
+        self.assertTrue(invalid_304.closed)
+        self.assertTrue(fresh.closed)
 
     def test_etag_304_and_shared_ttl(self):
         session = Session(Response(data=payload(), etag='"v1"'), Response(status=304))

@@ -146,6 +146,11 @@ class ElectionFeedClient:
                 if status == 304 and (previous is None or previous.feed is None):
                     # Defensive recovery: a 304 is unusable without a cached body.
                     headers.pop("If-None-Match", None)
+                    # Release the unusable 304 before retrying without an ETag.
+                    close = getattr(response, "close", None)
+                    if callable(close):
+                        close()
+                    response = None
                     response = self._sessions[office].get(
                         self.url, params={"year": 2026, "office": office},
                         timeout=(5, 8), headers=headers,
@@ -192,6 +197,12 @@ class ElectionFeedClient:
                     next_due=now + delay,
                     failures=failures, http_status=status,
                 )
+            finally:
+                # requests.Response holds pooled connections; close on success,
+                # validation errors, HTTP errors, and malformed JSON alike.
+                close = getattr(response, "close", None)
+                if callable(close):
+                    close()
             self._snapshots[office] = snapshot
             return snapshot
         finally:
