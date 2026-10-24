@@ -111,6 +111,56 @@ class HealthMonitorTests(unittest.TestCase):
         self.assertEqual(opener.calls[0][0], "https://example.streamlit.app/_stcore/health")
         self.assertIn("server health", check.detail)
 
+    def test_sleeping_streamlit_redirect_wakes_then_returns_real_ok(self):
+        redirect = HTTPError("https://example.streamlit.app/_stcore/health",
+                             303, "See Other", None, None)
+        opener = Opener(redirect, Response(b"<html>Starting app</html>"),
+                        Response(b"ok\n"))
+        delays = []
+        check = check_site("https://example.streamlit.app", opener,
+                           sleeper=delays.append)
+        self.assertEqual(check.status, "PASS")
+        self.assertIn("after transient response retry", check.detail)
+        self.assertEqual(delays, [3])
+        self.assertEqual(
+            [url for url, _ in opener.calls],
+            ["https://example.streamlit.app/_stcore/health",
+             "https://example.streamlit.app/",
+             "https://example.streamlit.app/_stcore/health"],
+        )
+
+    def test_persistent_redirect_never_counts_as_healthy(self):
+        def redirect():
+            return HTTPError("https://example.streamlit.app/_stcore/health",
+                             303, "See Other", None, None)
+        opener = Opener(redirect(), Response(b"<html>Login</html>"),
+                        redirect(), redirect())
+        delays = []
+        check = check_site("https://example.streamlit.app", opener,
+                           sleeper=delays.append)
+        self.assertEqual(check.status, "FAIL")
+        self.assertIn("HTTP 303", check.detail)
+        self.assertEqual(delays, [3, 6])
+        self.assertEqual(len(opener.calls), 4)
+
+    def test_transient_gateway_failure_recovers_without_wake_request(self):
+        gateway = HTTPError("https://example.streamlit.app/_stcore/health",
+                            503, "Unavailable", None, None)
+        opener = Opener(gateway, Response(b"ok"))
+        delays = []
+        check = check_site("https://example.streamlit.app", opener,
+                           sleeper=delays.append)
+        self.assertEqual(check.status, "PASS")
+        self.assertEqual(delays, [3])
+        self.assertEqual(len(opener.calls), 2)
+
+    def test_login_html_cannot_pass_health_probe(self):
+        opener = Opener(Response(b"<html>Sign in</html>"))
+        check = check_site("https://example.streamlit.app", opener,
+                           sleeper=lambda _: self.fail("Unexpected retry"))
+        self.assertEqual(check.status, "FAIL")
+        self.assertEqual(len(opener.calls), 1)
+
     def test_bad_deployment_health_and_insecure_url_fail(self):
         for url, opener in (
             ("https://example.streamlit.app", Opener(Response(b"not ok"))),
