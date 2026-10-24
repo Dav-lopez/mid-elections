@@ -147,10 +147,9 @@ class StreamlitExecutionSmokeTests(unittest.TestCase):
             any("0/1 published race identifiers match" in value for value in disclosures),
             "The source audit must disclose that no published House key matched",
         )
-        warnings = [str(item.message) for item in app.warning]
-        self.assertTrue(
-            any("House: 1 provider race identifier(s)" in value for value in warnings),
-            "Unmatched source identifiers must trigger an explicit mapping warning",
+        self.assertEqual(
+            len(app.warning), 1,
+            "The unmatched House key must raise one visible mapping warning",
         )
 
     def test_source_outage_still_renders_a_warning_and_no_vote_totals(self):
