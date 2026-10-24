@@ -129,6 +129,30 @@ class StreamlitExecutionSmokeTests(unittest.TestCase):
                                  "Synthetic Candidate B": 80})
         self.assertEqual(len(app.warning), 0)
 
+    def test_unmatched_provider_keys_are_disclosed_without_assigning_results(self):
+        """A valid but unmapped synthetic identifier must not become a tracked race."""
+        def respond(*args, **kwargs):
+            office = kwargs["params"]["office"]
+            races = {"ZZ-99": {}} if office == "House" else {}
+            return EmptyFeedResponse(office, races)
+
+        with patch.object(requests.Session, "get", side_effect=respond) as get:
+            app = self._run()
+
+        self.assertEqual(get.call_count, 2)
+        self.assertEqual(app.metric[2].value, "0", "Unmapped keys are not reported votes")
+        self.assertEqual(app.metric[3].value, "0", "Unmapped keys are not tracked races")
+        disclosures = [str(item.value) for item in app.markdown]
+        self.assertTrue(
+            any("0/1 published race identifiers match" in value for value in disclosures),
+            "The source audit must disclose that no published House key matched",
+        )
+        warnings = [str(item.message) for item in app.warning]
+        self.assertTrue(
+            any("House: 1 provider race identifier(s)" in value for value in warnings),
+            "Unmatched source identifiers must trigger an explicit mapping warning",
+        )
+
     def test_source_outage_still_renders_a_warning_and_no_vote_totals(self):
         with patch.object(requests.Session, "get", side_effect=requests.Timeout("offline")):
             app = self._run()
