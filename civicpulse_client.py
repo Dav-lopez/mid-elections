@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import threading
 import time
+from email.utils import parsedate_to_datetime
+from math import ceil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
@@ -16,6 +18,28 @@ import requests
 
 from civicpulse_core import Feed, FeedValidationError, parse_feed, refresh_seconds
 from civicpulse_disk_cache import DiskFeedCache
+
+
+def _retry_after_seconds(value: str | None, checked_at: datetime) -> int | None:
+    """Parse an HTTP Retry-After delay or GMT date, bounded to ten minutes.
+
+    A malformed header is ignored. A long provider-requested delay is capped
+    consistently with the existing maximum failure backoff.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    raw = value.strip()
+    if raw.isascii() and raw.isdigit():
+        return 600 if len(raw) > 9 else min(int(raw), 600)
+    try:
+        target = parsedate_to_datetime(raw)
+        if target.tzinfo is None:
+            return None
+        seconds = (target.astimezone(timezone.utc) -
+                   checked_at.astimezone(timezone.utc)).total_seconds()
+        return min(600, max(0, ceil(seconds)))
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 @dataclass(frozen=True)
@@ -112,6 +136,7 @@ class ElectionFeedClient:
             if previous is not None and previous.feed is not None and previous.etag:
                 headers["If-None-Match"] = previous.etag
             status = None
+            response = None
             try:
                 response = self._sessions[office].get(
                     self.url, params={"year": 2026, "office": office},
@@ -149,13 +174,22 @@ class ElectionFeedClient:
                 )
             except (requests.RequestException, FeedValidationError, ValueError) as exc:
                 failures = (previous.failures if previous else 0) + 1
+                delay = refresh_seconds([], failures=failures)
+                # HTTP 429/503 may ask clients to wait longer than our
+                # exponential backoff. Honor that request up to the existing
+                # ten-minute cap; manual refresh cannot bypass it.
+                if status in (429, 503) and response is not None:
+                    retry_after = _retry_after_seconds(
+                        response.headers.get("Retry-After"), checked_at)
+                    if retry_after is not None:
+                        delay = max(delay, retry_after)
                 snapshot = FeedSnapshot(
                     feed=previous.feed if previous else None,
                     error=f"{type(exc).__name__}: {exc}",
                     checked_at=checked_at,
                     last_success_at=previous.last_success_at if previous else None,
                     etag=previous.etag if previous else None,
-                    next_due=now + refresh_seconds([], failures=failures),
+                    next_due=now + delay,
                     failures=failures, http_status=status,
                 )
             self._snapshots[office] = snapshot

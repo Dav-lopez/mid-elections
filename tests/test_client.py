@@ -22,10 +22,12 @@ def payload(office="House", **changes):
 
 
 class Response:
-    def __init__(self, status=200, data=None, etag=None):
+    def __init__(self, status=200, data=None, etag=None, headers=None):
         self.status_code = status
         self.data = data
-        self.headers = {"ETag": etag} if etag else {}
+        self.headers = dict(headers or {})
+        if etag:
+            self.headers["ETag"] = etag
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -148,6 +150,42 @@ class ClientTests(unittest.TestCase):
             self.assertEqual(snapshot.next_due - self.t, expected)
             self.t = snapshot.next_due
         self.assertEqual(len(session.calls), 5)
+
+    def test_429_retry_after_defers_requests_including_manual_refresh(self):
+        session = Session(
+            Response(status=429, headers={"Retry-After": "300"}),
+            Response(data=payload()),
+        )
+        client = self.client(session)
+        throttled = client.fetch("House")
+        self.assertEqual(throttled.http_status, 429)
+        self.assertEqual(throttled.next_due, 300)
+        self.t = 299
+        self.assertIs(client.fetch("House", force=True), throttled)
+        self.assertEqual(len(session.calls), 1)
+        self.t = 300
+        recovered = client.fetch("House")
+        self.assertIsNone(recovered.error)
+        self.assertEqual(len(session.calls), 2)
+
+    def test_retry_after_http_date_and_ten_minute_cap(self):
+        session = Session(
+            Response(status=503, headers={
+                "Retry-After": "Wed, 04 Nov 2026 01:05:00 GMT"
+            }),
+            Response(status=429, headers={"Retry-After": "999999999999999"}),
+        )
+        client = self.client(session)
+        first = client.fetch("House")
+        self.assertEqual(first.next_due, 300)
+        self.t = 300
+        second = client.fetch("House")
+        self.assertEqual(second.next_due - self.t, 600)
+
+    def test_invalid_retry_after_uses_normal_backoff(self):
+        session = Session(Response(status=429, headers={"Retry-After": "invalid"}))
+        result = self.client(session).fetch("House")
+        self.assertEqual(result.next_due, 120)
 
     def test_invalid_office_rejected_without_request(self):
         session = Session()
