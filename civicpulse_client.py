@@ -18,6 +18,7 @@ import requests
 
 from civicpulse_core import Feed, FeedValidationError, parse_feed, refresh_seconds
 from civicpulse_disk_cache import DiskFeedCache
+from civicpulse_transport import read_bounded_json
 
 
 def _retry_after_seconds(value: str | None, checked_at: datetime) -> int | None:
@@ -137,10 +138,11 @@ class ElectionFeedClient:
                 headers["If-None-Match"] = previous.etag
             status = None
             response = None
+            started_at = time.monotonic()
             try:
                 response = self._sessions[office].get(
                     self.url, params={"year": 2026, "office": office},
-                    timeout=(5, 8), headers=headers,
+                    timeout=(5, 8), headers=headers, stream=True,
                 )
                 status = response.status_code
                 if status == 304 and (previous is None or previous.feed is None):
@@ -153,7 +155,7 @@ class ElectionFeedClient:
                     response = None
                     response = self._sessions[office].get(
                         self.url, params={"year": 2026, "office": office},
-                        timeout=(5, 8), headers=headers,
+                        timeout=(5, 8), headers=headers, stream=True,
                     )
                     status = response.status_code
                 if status == 304:
@@ -161,7 +163,7 @@ class ElectionFeedClient:
                     etag = response.headers.get("ETag") or previous.etag
                 else:
                     response.raise_for_status()
-                    feed = parse_feed(response.json(), office)
+                    feed = parse_feed(read_bounded_json(response, started_at), office)
                     etag = response.headers.get("ETag")
                 if feed is None:
                     raise ValueError("No validated body available for HTTP 304")
