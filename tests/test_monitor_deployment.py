@@ -180,7 +180,7 @@ class HealthMonitorTests(unittest.TestCase):
         self.assertTrue(all("provider.example" in url for url, _ in opener.calls))
 
     def test_deployment_only_scope_does_not_contact_provider(self):
-        opener = Opener(Response(b"ok\\n"))
+        opener = Opener(Response(b"ok"))
         checks = run_checks("https://provider.example/results.json",
                             "https://app.streamlit.app", opener, scope="deployment")
         self.assertEqual([(check.name, check.status) for check in checks],
