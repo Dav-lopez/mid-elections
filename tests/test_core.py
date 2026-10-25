@@ -138,6 +138,36 @@ class FeedTests(unittest.TestCase):
                          ["AliceXYZ", "👩\u200d💻", "علي"])
         self.assertEqual([c["Votes"] for c in row["candidates"]], [10, 4, 3])
 
+    def test_embedded_controls_and_surrogates_removed_from_result_labels(self):
+        row = normalize_race("House", "TX", "TX-01", {
+            "leader": "Al\u200b\u0000\ud800ice",
+            "winner": "Al\u2060ice",
+            "called": True,
+            "cands": [
+                {"n": "Al\u200b\u0000\ud800ice", "p": "D\u202eR", "v": 10},
+                {"n": "👩\u200d💻", "p": "I\u000a", "v": 2},
+                {"n": "علي\u200c", "p": "\udfff", "v": 1},
+            ],
+        }, "Live counting", None)
+        self.assertEqual(row["Coverage"], "Results reported")
+        self.assertEqual(row["Leader (not winner)"], "Alice")
+        self.assertEqual(row["Source call"], "Alice")
+        self.assertEqual(
+            [entry["Candidate"] for entry in row["candidates"]],
+            ["Alice", "👩\u200d💻", "علي\u200c"],
+        )
+        self.assertEqual(
+            [entry["Party"] for entry in row["candidates"]],
+            ["DR", "I", "—"],
+        )
+        self.assertEqual(
+            [entry["Votes"] for entry in row["candidates"]],
+            [10, 2, 1],
+        )
+        for entry in row["candidates"]:
+            entry["Candidate"].encode("utf-8")
+            entry["Party"].encode("utf-8")
+
     def test_no_positive_votes_and_no_total_stays_unreported(self):
         row = normalize_race("House", "TX", "TX-01", {
             "cands": [{"n": "A", "v": 0}, {"n": "B", "v": None}],
