@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from math import isfinite
 from typing import Any
 
 
@@ -104,10 +103,12 @@ def valid_votes(value: Any) -> int | None:
 def percent(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    number = float(value)
-    if not isfinite(number) or not 0 <= number <= 100:
+    # Check the range before converting: a valid JSON integer can be too
+    # large for float(), raising OverflowError and crashing the dashboard.
+    # These comparisons also reject NaN and infinities without conversion.
+    if not 0 <= value <= 100:
         return None
-    return number
+    return float(value)
 
 
 def normalize_race(office: str, state: str, seat: str, race: dict | None,
