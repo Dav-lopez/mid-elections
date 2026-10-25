@@ -59,9 +59,12 @@ The deployment probe requires an exact `ok` response from `/_stcore/health`.
 If Streamlit Community Cloud returns a transient HTTP 303 redirect (such as
 during an app cold start), it makes one read-only request to the same origin's
 home page and retries the health endpoint twice with short bounded delays.
-Transient HTTP 502/503 responses are also retried. A persistent redirect,
-login page, or unhealthy response still **fails** the monitor; a successful
-health response verifies server readiness only, not dashboard rendering.
+Transient HTTP 502/503 responses are also retried. The health probe also
+rejects redirects silently followed by Python's HTTP client, even when the
+redirect destination returns HTTP 200 or the text `ok`; only a direct response
+from `/_stcore/health` can pass. A persistent redirect, login page, or
+unhealthy response still **fails** the monitor; a successful health response
+verifies server readiness only, not dashboard rendering.
 Optionally set `ELECTION_RESULTS_URL` to match the app's configured HTTPS source.
 No API key or secret is required for the default provider.
 

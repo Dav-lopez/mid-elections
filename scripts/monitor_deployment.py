@@ -29,6 +29,10 @@ class Check:
     detail: str
 
 
+class FollowedHealthRedirect(ValueError):
+    """The HTTP client followed a health redirect before returning a response."""
+
+
 def _https_parts(url: str):
     parts = urlsplit(url)
     if (parts.scheme != "https" or not parts.hostname or
@@ -50,12 +54,19 @@ def _site_health_url(site: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, "/_stcore/health", "", ""))
 
 
-def _read(url: str, accept: str, opener) -> bytes:
+def _read(url: str, accept: str, opener, *, reject_redirects: bool = False) -> bytes:
     request = Request(url, headers={
         "Accept": accept,
         "User-Agent": "CivicPulse-health-monitor/1.0 (read-only status check)",
     })
     with opener(request, timeout=TIMEOUT_SECONDS) as response:
+        # urllib.request.urlopen follows HTTP 303 by default, so a redirect to
+        # an app login/sleep page can otherwise masquerade as HTTP 200 here.
+        # The health probe must validate the *requested* endpoint, not the
+        # eventual page reached after an implicit redirect.
+        if reject_redirects and hasattr(response, "geturl"):
+            if response.geturl() != url:
+                raise FollowedHealthRedirect("Health endpoint redirected")
         if response.status != 200:
             raise ValueError("Unexpected HTTP status")
         body = response.read(MAX_RESPONSE_BYTES + 1)
@@ -112,25 +123,32 @@ def check_site(site: str, opener=urlopen, sleeper=time.sleep) -> Check:
         url = _site_health_url(site)
         for attempt in range(3):
             try:
-                body = _read(url, "text/plain", opener)
+                body = _read(url, "text/plain", opener, reject_redirects=True)
                 if body.strip().lower() != b"ok":
                     raise ValueError("Unexpected health response")
                 detail = "Streamlit server health endpoint responded"
                 if attempt:
                     detail += " after transient response retry"
                 return Check("Deployment", "PASS", detail)
-            except HTTPError as exc:
-                if exc.code in (303, 502, 503) and attempt < 2:
-                    if exc.code == 303 and attempt == 0:
+            except (HTTPError, FollowedHealthRedirect) as exc:
+                followed_redirect = isinstance(exc, FollowedHealthRedirect)
+                code = 303 if followed_redirect else exc.code
+                if code in (303, 502, 503) and attempt < 2:
+                    if code == 303 and attempt == 0:
                         _wake_site(site, opener)
                     sleeper(3 * (attempt + 1))
                     continue
-                if exc.code == 303:
+                if followed_redirect:
+                    return Check(
+                        "Deployment", "FAIL",
+                        "Health endpoint redirect persisted; app may be sleeping or access-gated",
+                    )
+                if code == 303:
                     return Check(
                         "Deployment", "FAIL",
                         "HTTP 303 redirect persisted; app may be sleeping or access-gated",
                     )
-                return Check("Deployment", "FAIL", f"HTTP {exc.code}")
+                return Check("Deployment", "FAIL", f"HTTP {code}")
     except (URLError, TimeoutError, OSError) as exc:
         return Check("Deployment", "FAIL", f"Network failure ({type(exc).__name__})")
     except (ValueError, TypeError, UnicodeError):
