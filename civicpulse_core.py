@@ -41,9 +41,12 @@ class Feed:
 def parse_feed(payload: Any, office: str, year: int = 2026) -> Feed:
     if not isinstance(payload, dict):
         raise FeedValidationError("Feed payload must be a JSON object")
-    if payload.get("api") != 1:
+    # Python considers True == 1 and 1.0 == 1. Require the provider's
+    # documented JSON integer types, not merely numerically equal values.
+    if type(payload.get("api")) is not int or payload["api"] != 1:
         raise FeedValidationError("Unsupported results API version")
-    if payload.get("year") != year or str(payload.get("office", "")).casefold() != office.casefold():
+    if (type(payload.get("year")) is not int or payload["year"] != year or
+            str(payload.get("office", "")).casefold() != office.casefold()):
         raise FeedValidationError("Provider returned a different election or office")
     races = payload.get("races")
     if not isinstance(races, dict):
