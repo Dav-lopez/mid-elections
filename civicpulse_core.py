@@ -94,8 +94,14 @@ def format_feed_timestamp(value: str | None) -> str:
         return "Invalid timestamp"
 
 
+# The browser and Plotly represent JSON numbers as IEEE-754 doubles. Keep
+# provider counts in the lossless integer range to prevent pandas overflow and
+# misleading rounded counts. This is a transport bound, not a vote estimate.
+MAX_SAFE_VOTES = (1 << 53) - 1
+
+
 def valid_votes(value: Any) -> int | None:
-    if type(value) is not int or value < 0:
+    if type(value) is not int or not 0 <= value <= MAX_SAFE_VOTES:
         return None
     return value
 
