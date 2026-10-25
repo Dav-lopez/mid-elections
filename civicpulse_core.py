@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from unicodedata import category
 from typing import Any
 
 
@@ -41,9 +42,12 @@ class Feed:
 def parse_feed(payload: Any, office: str, year: int = 2026) -> Feed:
     if not isinstance(payload, dict):
         raise FeedValidationError("Feed payload must be a JSON object")
-    if payload.get("api") != 1:
+    # Python considers True == 1 and 1.0 == 1. Require the provider's
+    # documented JSON integer types, not merely numerically equal values.
+    if type(payload.get("api")) is not int or payload["api"] != 1:
         raise FeedValidationError("Unsupported results API version")
-    if payload.get("year") != year or str(payload.get("office", "")).casefold() != office.casefold():
+    if (type(payload.get("year")) is not int or payload["year"] != year or
+            str(payload.get("office", "")).casefold() != office.casefold()):
         raise FeedValidationError("Provider returned a different election or office")
     races = payload.get("races")
     if not isinstance(races, dict):
@@ -117,6 +121,30 @@ def percent(value: Any) -> float | None:
     return float(value)
 
 
+# Provider-supplied display labels may contain embedded C0 controls, invisible
+# formatting marks, or unpaired UTF-16 surrogates. These can spoof displayed
+# names or cause UnicodeEncodeError in UI/export paths. Keep the Arabic shaping
+# joiner and emoji joiner, but strip other nonprinting control characters.
+_PRESERVED_JOINERS = frozenset(("\u200c", "\u200d"))
+
+
+def _clean_visible_label(value: Any) -> str | None:
+    """Return a visible UTF-8-safe label, or None for blank/hidden text."""
+    if not isinstance(value, str):
+        return None
+    # Unicode line/paragraph separators can render one source label as
+    # multiple visual rows. Replace them with ordinary spaces instead.
+    label = "".join(
+        (" " if category(char) in ("Zl", "Zp") else char)
+        for char in value
+        if category(char) not in ("Cc", "Cs", "Cf")
+        or char in _PRESERVED_JOINERS
+    ).strip()
+    if not any(category(char)[0] in ("L", "N", "P", "S") for char in label):
+        return None
+    return label
+
+
 def normalize_race(office: str, state: str, seat: str, race: dict | None,
                    feed_status: str, as_of: str | None) -> dict[str, Any]:
     row: dict[str, Any] = {
@@ -134,11 +162,11 @@ def normalize_race(office: str, state: str, seat: str, race: dict | None,
         for candidate in raw:
             if not isinstance(candidate, dict):
                 continue
-            name = candidate.get("n", "")
-            if not isinstance(name, str) or not name.strip():
+            name = _clean_visible_label(candidate.get("n", ""))
+            if name is None:
                 continue
             candidates.append({
-                "Candidate": name, "Party": str(candidate.get("p") or "—"),
+                "Candidate": name, "Party": _clean_visible_label(candidate.get("p")) or "—",
                 "Votes": valid_votes(candidate.get("v")),
                 "Share (%)": percent(candidate.get("pct")),
             })
@@ -156,13 +184,12 @@ def normalize_race(office: str, state: str, seat: str, race: dict | None,
     # implying a candidate is leading (or has won) a zero-vote contest.
     leader = race.get("leader")
     winner = race.get("winner")
-    displayed_leader = (
-        leader.strip() if has_reported_votes and isinstance(leader, str)
-        and leader.strip() else "—"
-    )
+    clean_leader = _clean_visible_label(leader)
+    clean_winner = _clean_visible_label(winner)
+    displayed_leader = clean_leader if has_reported_votes and clean_leader is not None else "—"
     source_call = (
-        winner.strip() if has_reported_votes and race.get("called") is True
-        and isinstance(winner, str) and winner.strip() else "—"
+        clean_winner if has_reported_votes and race.get("called") is True
+        and clean_winner is not None else "—"
     )
     row.update({
         "Coverage": "Results reported" if has_reported_votes else "Listed, no votes yet",

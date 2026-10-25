@@ -34,6 +34,17 @@ class FeedTests(unittest.TestCase):
         with self.assertRaises(FeedValidationError):
             parse_feed(payload(api=2), "House")
 
+    def test_api_version_requires_json_integer_not_bool_or_float(self):
+        for api in (True, 1.0):
+            with self.subTest(api=api):
+                with self.assertRaisesRegex(FeedValidationError, "API version"):
+                    parse_feed(payload(api=api), "House")
+
+    def test_election_year_requires_json_integer_not_float(self):
+        with self.assertRaisesRegex(FeedValidationError, "different election"):
+            parse_feed(payload(year=2026.0), "House")
+        self.assertEqual(parse_feed(payload(year=2026), "House").year, 2026)
+
     def test_malformed_races_rejected(self):
         with self.assertRaises(FeedValidationError):
             parse_feed(payload(races=[]), "House")
@@ -88,6 +99,91 @@ class FeedTests(unittest.TestCase):
         }, "Live counting", None)
         self.assertEqual(row["Votes"], 500)
         self.assertEqual(row["Coverage"], "Results reported")
+
+    def test_invisible_only_candidate_cannot_imply_reported_votes(self):
+        row = normalize_race("House", "TX", "TX-01", {
+            "leader": "\u200b", "winner": "\u2060", "called": True,
+            "cands": [{"n": "\u200b", "v": 15},
+                      {"n": "\ufe0f", "v": 12}],
+        }, "Live counting", None)
+        self.assertEqual(row["Coverage"], "Listed, no votes yet")
+        self.assertEqual(row["candidates"], [])
+        self.assertEqual(row["Leader (not winner)"], "—")
+        self.assertEqual(row["Source call"], "—")
+
+    def test_invisible_only_leader_and_winner_suppressed_with_real_votes(self):
+        row = normalize_race("Senate", "TX", "TX", {
+            "total": 9, "leader": "\u200b", "winner": "\u2060",
+            "called": True, "cands": [{"n": "A\u200b", "v": 9}],
+        }, "Live counting", None)
+        self.assertEqual(row["Coverage"], "Results reported")
+        self.assertEqual(row["candidates"][0]["Candidate"], "A")
+        self.assertEqual(row["Leader (not winner)"], "—")
+        self.assertEqual(row["Source call"], "—")
+
+    def test_bidi_formatting_controls_cannot_spoof_visible_result_labels(self):
+        row = normalize_race("House", "TX", "TX-01", {
+            "leader": "Alice\u202eXYZ", "winner": "Alice\u2067XYZ",
+            "called": True, "cands": [
+                {"n": "Alice\u202eXYZ", "v": 10},
+                {"n": "\u061c\u200e", "v": 99},
+                {"n": "علي", "v": 3},
+                {"n": "👩\u200d💻", "v": 4},
+            ],
+        }, "Live counting", None)
+        self.assertEqual(row["Coverage"], "Results reported")
+        self.assertEqual(row["Leader (not winner)"], "AliceXYZ")
+        self.assertEqual(row["Source call"], "AliceXYZ")
+        self.assertEqual([c["Candidate"] for c in row["candidates"]],
+                         ["AliceXYZ", "👩\u200d💻", "علي"])
+        self.assertEqual([c["Votes"] for c in row["candidates"]], [10, 4, 3])
+
+    def test_line_and_paragraph_separators_cannot_split_result_labels(self):
+        row = normalize_race("House", "TX", "TX-01", {
+            "leader": "Al\u2028ice", "winner": "Al\u2029ice",
+            "called": True,
+            "cands": [
+                {"n": "Al\u2028ice", "p": "D\u2029R", "v": 11},
+                {"n": "\u2028\u2029", "v": 99},
+            ],
+        }, "Live counting", None)
+        self.assertEqual(row["Coverage"], "Results reported")
+        self.assertEqual(row["Leader (not winner)"], "Al ice")
+        self.assertEqual(row["Source call"], "Al ice")
+        self.assertEqual(len(row["candidates"]), 1)
+        self.assertEqual(row["candidates"][0]["Candidate"], "Al ice")
+        self.assertEqual(row["candidates"][0]["Party"], "D R")
+        self.assertEqual(row["candidates"][0]["Votes"], 11)
+
+    def test_embedded_controls_and_surrogates_removed_from_result_labels(self):
+        row = normalize_race("House", "TX", "TX-01", {
+            "leader": "Al\u200b\u0000\ud800ice",
+            "winner": "Al\u2060ice",
+            "called": True,
+            "cands": [
+                {"n": "Al\u200b\u0000\ud800ice", "p": "D\u202eR", "v": 10},
+                {"n": "👩\u200d💻", "p": "I\u000a", "v": 2},
+                {"n": "علي\u200c", "p": "\udfff", "v": 1},
+            ],
+        }, "Live counting", None)
+        self.assertEqual(row["Coverage"], "Results reported")
+        self.assertEqual(row["Leader (not winner)"], "Alice")
+        self.assertEqual(row["Source call"], "Alice")
+        self.assertEqual(
+            [entry["Candidate"] for entry in row["candidates"]],
+            ["Alice", "👩\u200d💻", "علي\u200c"],
+        )
+        self.assertEqual(
+            [entry["Party"] for entry in row["candidates"]],
+            ["DR", "I", "—"],
+        )
+        self.assertEqual(
+            [entry["Votes"] for entry in row["candidates"]],
+            [10, 2, 1],
+        )
+        for entry in row["candidates"]:
+            entry["Candidate"].encode("utf-8")
+            entry["Party"].encode("utf-8")
 
     def test_no_positive_votes_and_no_total_stays_unreported(self):
         row = normalize_race("House", "TX", "TX-01", {
