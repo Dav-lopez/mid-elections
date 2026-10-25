@@ -27,11 +27,14 @@ def neutralize_csv_cell(value: object) -> object:
 def spreadsheet_safe_csv(frame: pd.DataFrame) -> bytes:
     """Quote every CSV field and neutralize untrusted text, including headers."""
     safe = frame.copy()
-    for column in safe.columns:
-        dtype = safe[column].dtype
+    # Select by position: duplicate column labels make safe[label] a DataFrame,
+    # so accessing .dtype or assigning by label can fail or alter both columns.
+    for position in range(safe.shape[1]):
+        series = safe.iloc[:, position]
+        dtype = series.dtype
         if (pd.api.types.is_object_dtype(dtype)
                 or pd.api.types.is_string_dtype(dtype)
                 or isinstance(dtype, pd.CategoricalDtype)):
-            safe[column] = safe[column].map(neutralize_csv_cell)
+            safe.isetitem(position, series.map(neutralize_csv_cell))
     safe.columns = [neutralize_csv_cell(column) for column in safe.columns]
     return safe.to_csv(index=False, quoting=csv.QUOTE_ALL).encode("utf-8")
