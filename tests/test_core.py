@@ -34,6 +34,17 @@ class FeedTests(unittest.TestCase):
         with self.assertRaises(FeedValidationError):
             parse_feed(payload(api=2), "House")
 
+    def test_api_version_requires_json_integer_not_bool_or_float(self):
+        for api in (True, 1.0):
+            with self.subTest(api=api):
+                with self.assertRaisesRegex(FeedValidationError, "API version"):
+                    parse_feed(payload(api=api), "House")
+
+    def test_election_year_requires_json_integer_not_float(self):
+        with self.assertRaisesRegex(FeedValidationError, "different election"):
+            parse_feed(payload(year=2026.0), "House")
+        self.assertEqual(parse_feed(payload(year=2026), "House").year, 2026)
+
     def test_malformed_races_rejected(self):
         with self.assertRaises(FeedValidationError):
             parse_feed(payload(races=[]), "House")
