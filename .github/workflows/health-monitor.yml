@@ -1,7 +1,7 @@
 name: CivicPulse independent source and deployment monitor
 
-# This is an independent read-only probe; it does not run inside Streamlit,
-# inspect vote totals, or assert that every race is covered.
+# Independent read-only probes: a sleeping deployment must not make the
+# valid House/Senate source contract look broken (or vice versa).
 on:
   schedule:
     - cron: "7,22,37,52 * * * *"
@@ -15,18 +15,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  health:
+  source-contract:
+    name: House/Senate source contract
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      # Configure site URL after deployment in Settings > Secrets and variables
-      # > Actions > Variables. An empty value skips only the site check.
-      CIVICPULSE_SITE_URL: ${{ vars.CIVICPULSE_SITE_URL }}
+      CIVICPULSE_MONITOR_SCOPE: source
       ELECTION_RESULTS_URL: ${{ vars.ELECTION_RESULTS_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Check independent House/Senate source contract and site readiness
+      - name: Validate independent House/Senate API contracts
+        run: python -m scripts.monitor_deployment
+
+  deployment-readiness:
+    name: Public Streamlit deployment readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CIVICPULSE_MONITOR_SCOPE: deployment
+      # Configure in Settings > Secrets and variables > Actions > Variables.
+      # When absent, only this deployment probe reports SKIP.
+      CIVICPULSE_SITE_URL: ${{ vars.CIVICPULSE_SITE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check public Streamlit health endpoint
         run: python -m scripts.monitor_deployment
