@@ -121,22 +121,22 @@ def percent(value: Any) -> float | None:
     return float(value)
 
 
-# Bidirectional formatting controls can visually reorder source-provided
-# names and obscure the label actually received. Remove these formatting
-# characters, but preserve legitimate RTL letters and emoji joiners.
-_BIDI_CONTROLS = frozenset(
-    chr(codepoint) for codepoint in (
-        0x061C, 0x200E, 0x200F, *range(0x202A, 0x202F),
-        *range(0x2066, 0x206A),
-    )
-)
+# Provider-supplied display labels may contain embedded C0 controls, invisible
+# formatting marks, or unpaired UTF-16 surrogates. These can spoof displayed
+# names or cause UnicodeEncodeError in UI/export paths. Keep the Arabic shaping
+# joiner and emoji joiner, but strip other nonprinting control characters.
+_PRESERVED_JOINERS = frozenset(("\u200c", "\u200d"))
 
 
 def _clean_visible_label(value: Any) -> str | None:
-    """Return a display-safe visible label, or None for blank/hidden text."""
+    """Return a visible UTF-8-safe label, or None for blank/hidden text."""
     if not isinstance(value, str):
         return None
-    label = "".join(char for char in value if char not in _BIDI_CONTROLS).strip()
+    label = "".join(
+        char for char in value
+        if category(char) not in ("Cc", "Cs", "Cf")
+        or char in _PRESERVED_JOINERS
+    ).strip()
     if not any(category(char)[0] in ("L", "N", "P", "S") for char in label):
         return None
     return label
@@ -163,7 +163,7 @@ def normalize_race(office: str, state: str, seat: str, race: dict | None,
             if name is None:
                 continue
             candidates.append({
-                "Candidate": name, "Party": str(candidate.get("p") or "—"),
+                "Candidate": name, "Party": _clean_visible_label(candidate.get("p")) or "—",
                 "Votes": valid_votes(candidate.get("v")),
                 "Share (%)": percent(candidate.get("pct")),
             })
