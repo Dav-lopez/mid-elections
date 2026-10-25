@@ -138,12 +138,23 @@ def check_site(site: str, opener=urlopen, sleeper=time.sleep) -> Check:
     return Check("Deployment", "FAIL", "Health endpoint did not respond")
 
 
-def run_checks(source: str, site: str, opener=urlopen) -> list[Check]:
-    return [
-        check_feed("House", source, opener),
-        check_feed("Senate", source, opener),
-        check_site(site, opener),
-    ]
+def run_checks(source: str, site: str, opener=urlopen, *, scope: str = "all") -> list[Check]:
+    """Run independent source/deployment probes without masking either result.
+
+    Scope is explicit so CI can show provider-contract and app-readiness
+    failures as separate jobs. The default preserves local combined checks.
+    """
+    if scope not in ("all", "source", "deployment"):
+        raise ValueError("Monitor scope must be all, source, or deployment")
+    checks = []
+    if scope in ("all", "source"):
+        checks.extend((
+            check_feed("House", source, opener),
+            check_feed("Senate", source, opener),
+        ))
+    if scope in ("all", "deployment"):
+        checks.append(check_site(site, opener))
+    return checks
 
 
 def summary(checks: list[Check]) -> str:
@@ -166,6 +177,7 @@ def main() -> int:
     checks = run_checks(
         os.getenv("ELECTION_RESULTS_URL") or DEFAULT_SOURCE,
         os.getenv("CIVICPULSE_SITE_URL") or "",
+        scope=os.getenv("CIVICPULSE_MONITOR_SCOPE", "all").strip().lower(),
     )
     report = summary(checks)
     print(report)
