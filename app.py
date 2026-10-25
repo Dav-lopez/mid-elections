@@ -13,7 +13,7 @@ from civicpulse_csv import spreadsheet_safe_csv
 from civicpulse_disk_cache import DiskFeedCache
 from civicpulse_polling import fetch_offices
 from civicpulse_map import STATUS_LABELS, STATUS_COLORS, state_coverage
-from civicpulse_explorer import candidate_vote_rows, state_contests
+from civicpulse_explorer import candidate_vote_rows, has_positive_candidate_votes, state_contests
 from civicpulse_source_audit import audit_feed_keys, reconciliation_rows
 from civicpulse_registry import HOUSE, SENATE_2026, SENATE_SPECIAL_2026, STATES, registry
 from civicpulse_core import (PROVIDER_STATES, coverage_status, national_coverage_metrics,
@@ -182,7 +182,7 @@ with overview:
             if vote_rows:
                 vote_frame = pd.DataFrame(vote_rows)
                 st.dataframe(vote_frame, hide_index=True, use_container_width=True)
-                if any(candidate["Votes"] > 0 for candidate in vote_rows):
+                if has_positive_candidate_votes(vote_rows):
                     st.bar_chart(vote_frame.set_index("Candidate")["Votes"], horizontal=True)
                 else:
                     st.info("Candidate entries are listed, but no votes have been reported yet.")
@@ -251,7 +251,7 @@ with explorer:
             candidates = pd.DataFrame(detail["candidates"])
             st.dataframe(candidates, hide_index=True, use_container_width=True)
             votes = candidates.dropna(subset=["Votes"])
-            if not votes.empty and votes["Votes"].sum() > 0:
+            if not votes.empty and has_positive_candidate_votes(detail["candidates"]):
                 st.bar_chart(votes.set_index("Candidate")["Votes"], horizontal=True)
         else:
             st.info("This provider has no candidate vote breakdown for the selected race.")

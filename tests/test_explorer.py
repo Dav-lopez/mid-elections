@@ -1,7 +1,7 @@
 """State spotlight tests: navigation does not manufacture election data."""
 import unittest
 
-from civicpulse_explorer import candidate_vote_rows, state_contests
+from civicpulse_explorer import candidate_vote_rows, has_positive_candidate_votes, state_contests
 
 
 class StateExplorerTests(unittest.TestCase):
@@ -56,6 +56,35 @@ class StateExplorerTests(unittest.TestCase):
     def test_missing_candidate_breakdown(self):
         self.assertEqual(candidate_vote_rows({"candidates": None}), [])
         self.assertEqual(candidate_vote_rows({}), [])
+
+    def test_positive_candidate_detection_avoids_int64_sum_overflow(self):
+        # 1,025 individually valid browser-safe counts overflow pandas int64
+        # when summed, incorrectly hiding the chart despite positive votes.
+        maximum = (1 << 53) - 1
+        candidates = [
+            {"Candidate": f"Example {i}", "Votes": maximum}
+            for i in range(1025)
+        ]
+        self.assertTrue(has_positive_candidate_votes(candidates))
+
+    def test_positive_candidate_detection_ignores_missing_and_zero(self):
+        self.assertFalse(has_positive_candidate_votes([]))
+        self.assertFalse(has_positive_candidate_votes([
+            {"Candidate": "A", "Votes": 0},
+            {"Candidate": "B", "Votes": None},
+        ]))
+        self.assertTrue(has_positive_candidate_votes([
+            {"Candidate": "A", "Votes": 0},
+            {"Candidate": "B", "Votes": 1},
+        ]))
+
+    def test_positive_candidate_detection_rejects_malformed_values(self):
+        self.assertFalse(has_positive_candidate_votes([
+            None, {"Candidate": "A", "Votes": True},
+            {"Candidate": "B", "Votes": "12"},
+            {"Candidate": "", "Votes": 12},
+            {"Candidate": "C", "Votes": -1},
+        ]))
 
 
 if __name__ == "__main__":

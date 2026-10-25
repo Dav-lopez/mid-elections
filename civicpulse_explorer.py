@@ -43,3 +43,20 @@ def candidate_vote_rows(row: dict[str, Any]) -> list[dict[str, Any]]:
             and candidate["Candidate"].strip()
             and type(candidate.get("Votes")) is int
             and candidate["Votes"] >= 0]
+
+
+def has_positive_candidate_votes(candidates: list[dict[str, Any]]) -> bool:
+    """Detect a real positive candidate count without summing partial votes.
+
+    Summing even individually valid integer counts through pandas int64 can
+    overflow and turn a positive total negative, hiding the race chart. This
+    predicate never manufactures a race-wide total or treats missing as zero.
+    """
+    return any(
+        isinstance(candidate, dict)
+        and isinstance(candidate.get("Candidate"), str)
+        and bool(candidate["Candidate"].strip())
+        and type(candidate.get("Votes")) is int
+        and candidate["Votes"] > 0
+        for candidate in candidates
+    )
