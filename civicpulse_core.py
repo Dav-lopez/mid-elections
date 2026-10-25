@@ -121,16 +121,25 @@ def percent(value: Any) -> float | None:
     return float(value)
 
 
-def _has_visible_label(value: Any) -> bool:
-    """Reject labels made only of invisible Unicode controls or marks.
-
-    Visible letters, numbers, punctuation and symbols remain valid, including
-    non-ASCII candidate names and emoji. Format characters inside an otherwise
-    visible label are not removed or rewritten.
-    """
-    return isinstance(value, str) and any(
-        category(char)[0] in ("L", "N", "P", "S") for char in value
+# Bidirectional formatting controls can visually reorder source-provided
+# names and obscure the label actually received. Remove these formatting
+# characters, but preserve legitimate RTL letters and emoji joiners.
+_BIDI_CONTROLS = frozenset(
+    chr(codepoint) for codepoint in (
+        0x061C, 0x200E, 0x200F, *range(0x202A, 0x202F),
+        *range(0x2066, 0x206A),
     )
+)
+
+
+def _clean_visible_label(value: Any) -> str | None:
+    """Return a display-safe visible label, or None for blank/hidden text."""
+    if not isinstance(value, str):
+        return None
+    label = "".join(char for char in value if char not in _BIDI_CONTROLS).strip()
+    if not any(category(char)[0] in ("L", "N", "P", "S") for char in label):
+        return None
+    return label
 
 
 def normalize_race(office: str, state: str, seat: str, race: dict | None,
@@ -150,8 +159,8 @@ def normalize_race(office: str, state: str, seat: str, race: dict | None,
         for candidate in raw:
             if not isinstance(candidate, dict):
                 continue
-            name = candidate.get("n", "")
-            if not _has_visible_label(name):
+            name = _clean_visible_label(candidate.get("n", ""))
+            if name is None:
                 continue
             candidates.append({
                 "Candidate": name, "Party": str(candidate.get("p") or "—"),
@@ -172,12 +181,12 @@ def normalize_race(office: str, state: str, seat: str, race: dict | None,
     # implying a candidate is leading (or has won) a zero-vote contest.
     leader = race.get("leader")
     winner = race.get("winner")
-    displayed_leader = (
-        leader.strip() if has_reported_votes and _has_visible_label(leader) else "—"
-    )
+    clean_leader = _clean_visible_label(leader)
+    clean_winner = _clean_visible_label(winner)
+    displayed_leader = clean_leader if has_reported_votes and clean_leader is not None else "—"
     source_call = (
-        winner.strip() if has_reported_votes and race.get("called") is True
-        and _has_visible_label(winner) else "—"
+        clean_winner if has_reported_votes and race.get("called") is True
+        and clean_winner is not None else "—"
     )
     row.update({
         "Coverage": "Results reported" if has_reported_votes else "Listed, no votes yet",
