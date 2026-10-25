@@ -146,7 +146,7 @@ class HealthMonitorTests(unittest.TestCase):
         opener = Opener(
             RedirectedResponse(b"ok", "https://example.streamlit.app/"),
             Response(b"<html>Starting app</html>"),
-            Response(b"ok\\n"),
+            Response(b"ok"),
         )
         delays = []
         check = check_site("https://example.streamlit.app", opener,
