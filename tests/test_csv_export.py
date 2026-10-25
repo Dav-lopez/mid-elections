@@ -76,5 +76,20 @@ class CsvExportTests(unittest.TestCase):
                 self.assertEqual(neutralize_csv_cell(value), "'" + value)
 
 
+    def test_duplicate_column_labels_do_not_crash_or_skip_sanitization(self):
+        frame = pd.DataFrame(
+            [["=1+1", 9, "safe"], ["text", 10, "+SUM(1,2)"]],
+            columns=["Name", "Votes", "Name"],
+        )
+        original = frame.copy(deep=True)
+        rows = list(csv.reader(io.StringIO(spreadsheet_safe_csv(frame).decode("utf-8"))))
+        self.assertEqual(rows, [
+            ["Name", "Votes", "Name"],
+            ["'=1+1", "9", "safe"],
+            ["text", "10", "'+SUM(1,2)"],
+        ])
+        pd.testing.assert_frame_equal(frame, original)
+
+
 if __name__ == "__main__":
     unittest.main()
