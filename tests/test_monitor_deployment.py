@@ -169,6 +169,41 @@ class HealthMonitorTests(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertEqual(check_site(url, opener).status, "FAIL")
 
+    def test_source_only_scope_does_not_probe_failed_deployment(self):
+        opener = Opener(json_response(payload("House")),
+                        json_response(payload("Senate")))
+        checks = run_checks("https://provider.example/results.json",
+                            "https://app.streamlit.app", opener, scope="source")
+        self.assertEqual([(check.name, check.status) for check in checks],
+                         [("House", "PASS"), ("Senate", "PASS")])
+        self.assertEqual(len(opener.calls), 2)
+        self.assertTrue(all("provider.example" in url for url, _ in opener.calls))
+
+    def test_deployment_only_scope_does_not_contact_provider(self):
+        opener = Opener(Response(b"ok\\n"))
+        checks = run_checks("https://provider.example/results.json",
+                            "https://app.streamlit.app", opener, scope="deployment")
+        self.assertEqual([(check.name, check.status) for check in checks],
+                         [("Deployment", "PASS")])
+        self.assertEqual(len(opener.calls), 1)
+        self.assertEqual(opener.calls[0][0],
+                         "https://app.streamlit.app/_stcore/health")
+
+    def test_missing_deployment_url_skips_only_deployment_scope(self):
+        opener = Opener()
+        checks = run_checks("https://provider.example/results.json",
+                            "", opener, scope="deployment")
+        self.assertEqual([(check.name, check.status) for check in checks],
+                         [("Deployment", "SKIP")])
+        self.assertEqual(opener.calls, [])
+
+    def test_invalid_scope_fails_before_any_network_request(self):
+        opener = Opener()
+        with self.assertRaisesRegex(ValueError, "Monitor scope"):
+            run_checks("https://provider.example/results.json",
+                       "https://app.streamlit.app", opener, scope="typo")
+        self.assertEqual(opener.calls, [])
+
     def test_checks_are_independent_and_summary_contains_no_vote_data(self):
         opener = Opener(
             Response(b"{invalid"),
