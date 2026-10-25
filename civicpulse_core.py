@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from unicodedata import category
 from typing import Any
 
 
@@ -120,6 +121,18 @@ def percent(value: Any) -> float | None:
     return float(value)
 
 
+def _has_visible_label(value: Any) -> bool:
+    """Reject labels made only of invisible Unicode controls or marks.
+
+    Visible letters, numbers, punctuation and symbols remain valid, including
+    non-ASCII candidate names and emoji. Format characters inside an otherwise
+    visible label are not removed or rewritten.
+    """
+    return isinstance(value, str) and any(
+        category(char)[0] in ("L", "N", "P", "S") for char in value
+    )
+
+
 def normalize_race(office: str, state: str, seat: str, race: dict | None,
                    feed_status: str, as_of: str | None) -> dict[str, Any]:
     row: dict[str, Any] = {
@@ -138,7 +151,7 @@ def normalize_race(office: str, state: str, seat: str, race: dict | None,
             if not isinstance(candidate, dict):
                 continue
             name = candidate.get("n", "")
-            if not isinstance(name, str) or not name.strip():
+            if not _has_visible_label(name):
                 continue
             candidates.append({
                 "Candidate": name, "Party": str(candidate.get("p") or "—"),
@@ -160,12 +173,11 @@ def normalize_race(office: str, state: str, seat: str, race: dict | None,
     leader = race.get("leader")
     winner = race.get("winner")
     displayed_leader = (
-        leader.strip() if has_reported_votes and isinstance(leader, str)
-        and leader.strip() else "—"
+        leader.strip() if has_reported_votes and _has_visible_label(leader) else "—"
     )
     source_call = (
         winner.strip() if has_reported_votes and race.get("called") is True
-        and isinstance(winner, str) and winner.strip() else "—"
+        and _has_visible_label(winner) else "—"
     )
     row.update({
         "Coverage": "Results reported" if has_reported_votes else "Listed, no votes yet",
