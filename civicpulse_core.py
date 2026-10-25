@@ -151,12 +151,24 @@ def normalize_race(office: str, state: str, seat: str, race: dict | None,
         for candidate in candidates
     )
     has_reported_votes = (total is not None and total > 0) or candidate_votes_published
-    leader = str(race.get("leader") or "—")
+    # A provider's leader/call fields cannot substantiate a result when no
+    # positive vote counts have been published. Suppress them rather than
+    # implying a candidate is leading (or has won) a zero-vote contest.
+    leader = race.get("leader")
+    winner = race.get("winner")
+    displayed_leader = (
+        leader.strip() if has_reported_votes and isinstance(leader, str)
+        and leader.strip() else "—"
+    )
+    source_call = (
+        winner.strip() if has_reported_votes and race.get("called") is True
+        and isinstance(winner, str) and winner.strip() else "—"
+    )
     row.update({
         "Coverage": "Results reported" if has_reported_votes else "Listed, no votes yet",
         "Votes": total, "Precincts (%)": percent(race.get("pct_in")),
-        "Leader (not winner)": leader,
-        "Source call": str(race.get("winner") or "—") if race.get("called") is True else "—",
+        "Leader (not winner)": displayed_leader,
+        "Source call": source_call,
         "candidates": candidates,
     })
     return row
