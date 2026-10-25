@@ -19,7 +19,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from urllib.request import urlopen
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS = ROOT / "artifacts" / "browser-smoke"
@@ -96,8 +96,13 @@ def inspect_page(browser, port, *, mobile):
         assert "No forecasts, inferred winners, or fabricated vote totals" in (
             page.locator(".hero").inner_text()
         )
-        assert page.get_by_role("combobox", name="Inspect state").count() == 1, (
-            "State spotlight must have a labeled keyboard-accessible selector"
+        # Streamlit mounts controls asynchronously after section headings appear.
+        # A synchronous count() can race that mount and falsely fail CI even
+        # though the labeled, keyboard-accessible selector appears moments later.
+        spotlight_selector = page.get_by_role("combobox", name="Inspect state")
+        spotlight_selector.wait_for(state="visible", timeout=30_000)
+        assert spotlight_selector.count() == 1, (
+            "State spotlight must have exactly one labeled selector"
         )
 
         if mobile:
@@ -109,15 +114,11 @@ def inspect_page(browser, port, *, mobile):
         else:
             race_tab = page.get_by_role("tab", name="Race explorer")
             race_tab.click()
-            assert race_tab.get_attribute("aria-selected") == "true", (
-                "Race explorer tab is not keyboard/ARIA selectable"
-            )
+            expect(race_tab).to_have_attribute("aria-selected", "true", timeout=10_000)
             overview_tab = page.get_by_role("tab", name="Overview & map")
             overview_tab.focus()
             overview_tab.press("Enter")
-            assert overview_tab.get_attribute("aria-selected") == "true", (
-                "Overview tab cannot be activated using the keyboard"
-            )
+            expect(overview_tab).to_have_attribute("aria-selected", "true", timeout=10_000)
         print(f"PASS {name}: dashboard rendered; controls and navigation checked")
     finally:
         try:
