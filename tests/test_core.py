@@ -121,6 +121,23 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(row["Leader (not winner)"], "—")
         self.assertEqual(row["Source call"], "—")
 
+    def test_bidi_formatting_controls_cannot_spoof_visible_result_labels(self):
+        row = normalize_race("House", "TX", "TX-01", {
+            "leader": "Alice\u202eXYZ", "winner": "Alice\u2067XYZ",
+            "called": True, "cands": [
+                {"n": "Alice\u202eXYZ", "v": 10},
+                {"n": "\u061c\u200e", "v": 99},
+                {"n": "علي", "v": 3},
+                {"n": "👩\u200d💻", "v": 4},
+            ],
+        }, "Live counting", None)
+        self.assertEqual(row["Coverage"], "Results reported")
+        self.assertEqual(row["Leader (not winner)"], "AliceXYZ")
+        self.assertEqual(row["Source call"], "AliceXYZ")
+        self.assertEqual([c["Candidate"] for c in row["candidates"]],
+                         ["AliceXYZ", "👩\u200d💻", "علي"])
+        self.assertEqual([c["Votes"] for c in row["candidates"]], [10, 4, 3])
+
     def test_no_positive_votes_and_no_total_stays_unreported(self):
         row = normalize_race("House", "TX", "TX-01", {
             "cands": [{"n": "A", "v": 0}, {"n": "B", "v": None}],
