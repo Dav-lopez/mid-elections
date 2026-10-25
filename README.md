@@ -11,6 +11,7 @@ CivicPulse is an independent, nonpartisan Streamlit viewer for **partial-coverag
 - Clear distinction between votes reported, races listed without votes, missing races, unsupported states, and feed failures. Missing data is **not zero**.
 - Downloaded CSVs are intended for spreadsheet viewing: provider-supplied strings beginning with formula-like characters (including after invisible whitespace) are prefixed with an apostrophe, and fields are quoted. This affects the downloaded text, not the in-app data; it is not a universal guarantee after spreadsheet save/reopen. Use verified raw source data for machine-to-machine processing.
 - **No inferred race totals:** The `Votes` column shows only provider-published race totals. Positive candidate-level counts can mark a race as reporting while its race-wide total remains blank if unpublished. Candidate lists may omit write-ins or delayed entries; they are never summed to fabricate a total.
+- Provider vote counts outside the browser's lossless integer range (0 through 2⁵³−1) are treated as missing, not zero, to prevent pandas overflow and misleading rounded charts. Valid candidate counts remain visible; invalid race totals are never reconstructed from candidates.
 
 ## Run locally
 
