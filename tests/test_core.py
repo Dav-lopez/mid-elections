@@ -117,7 +117,7 @@ class FeedTests(unittest.TestCase):
             "called": True, "cands": [{"n": "A\u200b", "v": 9}],
         }, "Live counting", None)
         self.assertEqual(row["Coverage"], "Results reported")
-        self.assertEqual(row["candidates"][0]["Candidate"], "A\u200b")
+        self.assertEqual(row["candidates"][0]["Candidate"], "A")
         self.assertEqual(row["Leader (not winner)"], "—")
         self.assertEqual(row["Source call"], "—")
 
