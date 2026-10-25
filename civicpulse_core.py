@@ -132,8 +132,11 @@ def _clean_visible_label(value: Any) -> str | None:
     """Return a visible UTF-8-safe label, or None for blank/hidden text."""
     if not isinstance(value, str):
         return None
+    # Unicode line/paragraph separators can render one source label as
+    # multiple visual rows. Replace them with ordinary spaces instead.
     label = "".join(
-        char for char in value
+        (" " if category(char) in ("Zl", "Zp") else char)
+        for char in value
         if category(char) not in ("Cc", "Cs", "Cf")
         or char in _PRESERVED_JOINERS
     ).strip()
