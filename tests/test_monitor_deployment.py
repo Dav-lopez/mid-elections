@@ -33,6 +33,17 @@ class Response:
         return False
 
 
+class RedirectedResponse(Response):
+    """Simulate urllib transparently following an HTTP redirect to HTTP 200."""
+
+    def __init__(self, data, final_url):
+        super().__init__(data)
+        self.final_url = final_url
+
+    def geturl(self):
+        return self.final_url
+
+
 class Opener:
     def __init__(self, *items):
         self.items = list(items)
@@ -128,6 +139,34 @@ class HealthMonitorTests(unittest.TestCase):
              "https://example.streamlit.app/",
              "https://example.streamlit.app/_stcore/health"],
         )
+
+    def test_implicitly_followed_redirect_wakes_then_requires_direct_ok(self):
+        # urlopen follows 303 automatically: the final response is HTTP 200,
+        # but geturl() reveals that it came from a different endpoint.
+        opener = Opener(
+            RedirectedResponse(b"ok", "https://example.streamlit.app/"),
+            Response(b"<html>Starting app</html>"),
+            Response(b"ok\\n"),
+        )
+        delays = []
+        check = check_site("https://example.streamlit.app", opener,
+                           sleeper=delays.append)
+        self.assertEqual(check.status, "PASS")
+        self.assertEqual(delays, [3])
+        self.assertEqual(len(opener.calls), 3)
+
+    def test_implicitly_followed_redirect_never_passes_even_with_ok_body(self):
+        redirect = lambda: RedirectedResponse(
+            b"ok", "https://example.streamlit.app/login")
+        opener = Opener(redirect(), Response(b"<html>Login</html>"),
+                        redirect(), redirect())
+        delays = []
+        check = check_site("https://example.streamlit.app", opener,
+                           sleeper=delays.append)
+        self.assertEqual(check.status, "FAIL")
+        self.assertIn("redirect persisted", check.detail)
+        self.assertEqual(delays, [3, 6])
+        self.assertEqual(len(opener.calls), 4)
 
     def test_persistent_redirect_never_counts_as_healthy(self):
         def redirect():
