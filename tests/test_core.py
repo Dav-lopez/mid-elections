@@ -138,6 +138,23 @@ class FeedTests(unittest.TestCase):
                          ["AliceXYZ", "👩\u200d💻", "علي"])
         self.assertEqual([c["Votes"] for c in row["candidates"]], [10, 4, 3])
 
+    def test_line_and_paragraph_separators_cannot_split_result_labels(self):
+        row = normalize_race("House", "TX", "TX-01", {
+            "leader": "Al\u2028ice", "winner": "Al\u2029ice",
+            "called": True,
+            "cands": [
+                {"n": "Al\u2028ice", "p": "D\u2029R", "v": 11},
+                {"n": "\u2028\u2029", "v": 99},
+            ],
+        }, "Live counting", None)
+        self.assertEqual(row["Coverage"], "Results reported")
+        self.assertEqual(row["Leader (not winner)"], "Al ice")
+        self.assertEqual(row["Source call"], "Al ice")
+        self.assertEqual(len(row["candidates"]), 1)
+        self.assertEqual(row["candidates"][0]["Candidate"], "Al ice")
+        self.assertEqual(row["candidates"][0]["Party"], "D R")
+        self.assertEqual(row["candidates"][0]["Votes"], 11)
+
     def test_embedded_controls_and_surrogates_removed_from_result_labels(self):
         row = normalize_race("House", "TX", "TX-01", {
             "leader": "Al\u200b\u0000\ud800ice",
