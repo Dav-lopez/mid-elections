@@ -100,6 +100,27 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(row["Votes"], 500)
         self.assertEqual(row["Coverage"], "Results reported")
 
+    def test_invisible_only_candidate_cannot_imply_reported_votes(self):
+        row = normalize_race("House", "TX", "TX-01", {
+            "leader": "\u200b", "winner": "\u2060", "called": True,
+            "cands": [{"n": "\u200b", "v": 15},
+                      {"n": "\ufe0f", "v": 12}],
+        }, "Live counting", None)
+        self.assertEqual(row["Coverage"], "Listed, no votes yet")
+        self.assertEqual(row["candidates"], [])
+        self.assertEqual(row["Leader (not winner)"], "—")
+        self.assertEqual(row["Source call"], "—")
+
+    def test_invisible_only_leader_and_winner_suppressed_with_real_votes(self):
+        row = normalize_race("Senate", "TX", "TX", {
+            "total": 9, "leader": "\u200b", "winner": "\u2060",
+            "called": True, "cands": [{"n": "A\u200b", "v": 9}],
+        }, "Live counting", None)
+        self.assertEqual(row["Coverage"], "Results reported")
+        self.assertEqual(row["candidates"][0]["Candidate"], "A\u200b")
+        self.assertEqual(row["Leader (not winner)"], "—")
+        self.assertEqual(row["Source call"], "—")
+
     def test_no_positive_votes_and_no_total_stays_unreported(self):
         row = normalize_race("House", "TX", "TX-01", {
             "cands": [{"n": "A", "v": 0}, {"n": "B", "v": None}],
