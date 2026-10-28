@@ -1,7 +1,7 @@
 """Offline regression tests for independent production health monitoring."""
 import json
 import unittest
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 from scripts.monitor_deployment import (
     MAX_RESPONSE_BYTES, check_feed, check_site, run_checks, summary,
@@ -192,6 +192,26 @@ class HealthMonitorTests(unittest.TestCase):
         self.assertEqual(check.status, "PASS")
         self.assertEqual(delays, [3])
         self.assertEqual(len(opener.calls), 2)
+
+    def test_transient_network_failure_recovers_with_bounded_retry(self):
+        opener = Opener(URLError("temporary DNS failure"), Response(b"ok"))
+        delays = []
+        check = check_site("https://example.streamlit.app", opener,
+                           sleeper=delays.append)
+        self.assertEqual(check.status, "PASS")
+        self.assertEqual(delays, [3])
+        self.assertEqual(len(opener.calls), 2)
+
+    def test_persistent_network_failure_fails_after_three_attempts(self):
+        opener = Opener(URLError("temporary"), URLError("temporary"),
+                        URLError("temporary"))
+        delays = []
+        check = check_site("https://example.streamlit.app", opener,
+                           sleeper=delays.append)
+        self.assertEqual(check.status, "FAIL")
+        self.assertIn("Network failure", check.detail)
+        self.assertEqual(delays, [3, 6])
+        self.assertEqual(len(opener.calls), 3)
 
     def test_login_html_cannot_pass_health_probe(self):
         opener = Opener(Response(b"<html>Sign in</html>"))
