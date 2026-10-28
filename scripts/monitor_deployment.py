@@ -130,15 +130,6 @@ def check_site(site: str, opener=urlopen, sleeper=time.sleep) -> Check:
                 if attempt:
                     detail += " after transient response retry"
                 return Check("Deployment", "PASS", detail)
-            except (URLError, TimeoutError, OSError) as exc:
-                # A transient DNS/socket failure during a cold start is not
-                # evidence that the deployment is permanently unavailable.
-                # Retry within the same bounded three-attempt budget.
-                if attempt < 2:
-                    sleeper(3 * (attempt + 1))
-                    continue
-                return Check("Deployment", "FAIL",
-                             f"Network failure ({type(exc).__name__})")
             except (HTTPError, FollowedHealthRedirect) as exc:
                 followed_redirect = isinstance(exc, FollowedHealthRedirect)
                 code = 303 if followed_redirect else exc.code
@@ -158,6 +149,15 @@ def check_site(site: str, opener=urlopen, sleeper=time.sleep) -> Check:
                         "HTTP 303 redirect persisted; app may be sleeping or access-gated",
                     )
                 return Check("Deployment", "FAIL", f"HTTP {code}")
+            except (URLError, TimeoutError, OSError) as exc:
+                # A transient DNS/socket failure during a cold start is not
+                # evidence that the deployment is permanently unavailable.
+                # Retry within the same bounded three-attempt budget.
+                if attempt < 2:
+                    sleeper(3 * (attempt + 1))
+                    continue
+                return Check("Deployment", "FAIL",
+                             f"Network failure ({type(exc).__name__})")
     except (URLError, TimeoutError, OSError) as exc:
         return Check("Deployment", "FAIL", f"Network failure ({type(exc).__name__})")
     except (ValueError, TypeError, UnicodeError):
