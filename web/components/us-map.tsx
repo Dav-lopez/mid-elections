@@ -30,9 +30,11 @@ export default function UsMap({counts,selected,onSelect}:Props){
       if(!code)return null;
       const data=counts[code]??{reported:0,listed:0,tracked:0};
       const stateClass=data.reported>0?"tile-reported":data.listed>0?"tile-listed":"tile-pending";
+      // Explicit SVG fill: CSS background-color alone does not color <path> elements.
+      const fill=data.reported>0?"#087e83":data.listed>0?"#f2b94b":"#dbe5f2";
       const description=code+": "+data.reported+" contests with votes, "+data.listed+" contests listed in results or official candidate sources";
       const handleSelect=()=>onSelect(selected===code?"All":code);
-      return <path key={code} d={path(shape)||""} className={"state-shape "+stateClass+(selected===code?" shape-selected":"")}
+      return <path key={code} d={path(shape)||""} className={"state-shape "+stateClass+(selected===code?" shape-selected":"")} fill={fill}
         role="button" tabIndex={0} aria-label={description} aria-pressed={selected===code} onClick={handleSelect}
         onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();handleSelect();}}}>
         <title>{description}</title>
