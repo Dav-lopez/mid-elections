@@ -57,3 +57,48 @@
 .state-shape:hover,.state-shape:focus-visible{filter:brightness(.88);stroke:#14233b;stroke-width:2.8}
 .state-shape.shape-selected{stroke:#f1ab36;stroke-width:4;filter:brightness(.96)}
 @media(max-width:800px){.us-choropleth{margin:8px auto;max-height:340px}.state-shape{stroke-width:2}}
+
+/* State coverage lives in the SVG fill attribute, not background-color. */
+.us-choropleth .state-shape{fill:#dbe5f2;stroke:#fff;stroke-width:1.5px}
+.us-choropleth .state-shape.tile-reported{fill:#087e83}
+.us-choropleth .state-shape.tile-listed{fill:#f2b94b}
+.us-choropleth .state-shape.tile-pending{fill:#dbe5f2}
+.us-choropleth .state-shape:hover,.us-choropleth .state-shape:focus-visible{stroke:#26364a;stroke-width:3px}
+.us-choropleth .state-shape.shape-selected{stroke:#e06d0a;stroke-width:4px}
+.map-legend .tile-reported{background:#087e83}
+.map-legend .tile-listed{background:#f2b94b}
+.map-legend .tile-pending{background:#dbe5f2}
+.party-dot.party-dem,.party-badge.party-dem{background:#2563eb;color:#fff}
+.party-dot.party-rep,.party-badge.party-rep{background:#c82b42;color:#fff}
+.party-dot.party-ind,.party-badge.party-ind{background:#7251b5;color:#fff}
+.party-dot.party-lib,.party-badge.party-lib{background:#a9690b;color:#fff}
+.party-dot.party-green,.party-badge.party-green{background:#128354;color:#fff}
+.party-dot.party-other,.party-badge.party-other{background:#66758a;color:#fff}
+.party-badge{display:inline-flex;align-items:center;justify-content:center;border-radius:7px;min-width:28px;padding:4px 7px;font-size:12px;font-weight:800;line-height:1.2;white-space:nowrap}
+.party-caption{font-size:11px;color:#536278}
+.card-candidate .candidate-name{display:flex;flex-direction:column;gap:2px;line-height:1.2}
+.card-candidate .candidate-name strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.candidate-details{display:flex;align-items:center;gap:8px;margin:5px 0;white-space:normal}
+.candidate-details .candidate-votes{margin-left:auto;color:#536278}
+.refresh-status{display:flex;align-items:center;flex-wrap:wrap;gap:9px;margin:5px 0 16px;color:#35516d;font-size:12px}
+.refresh-status .dot{display:inline-block;width:8px;height:8px;background:#087e83;border-radius:50%}
+.insights-board{margin:20px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:12px}
+.insight-panel{background:#f8fbff;border:1px solid #d9e4f0;border-radius:14px;padding:16px}
+.insight-panel h3{margin:0 0 8px;font-size:15px}
+.insight-panel p{font-size:12px;color:#526378;line-height:1.5}
+.insight-entry{display:flex;align-items:center;gap:9px;padding:8px 0;border-top:1px solid #e1e9f2;font-size:12px}
+.insight-entry strong{font-size:12px}
+.insight-entry button{border:0;background:transparent;color:#075d8e;font-weight:700;cursor:pointer;text-decoration:underline;text-align:left}
+.insight-sub{margin-left:auto;color:#516276;text-align:right;font-variant-numeric:tabular-nums}
+.race-alert-button{border:1px solid #c77d30;background:#fff4df;color:#815118;border-radius:8px;padding:8px 12px;font-weight:750;cursor:pointer}
+.close-alert{position:fixed;bottom:20px;right:20px;z-index:30;width:min(410px,calc(100vw - 32px));background:#fffaf0;border:2px solid #f0bd63;box-shadow:0 15px 45px #14233b34;border-radius:14px;padding:17px;color:#233347}
+.close-alert .close-header{display:flex;align-items:start;justify-content:space-between;gap:12px}
+.close-alert button{cursor:pointer;border:0;border-radius:6px;background:#e5ecf3;padding:5px 8px}
+.close-alert h3{font-size:15px;margin:0 0 8px}
+.close-alert p{font-size:12px;line-height:1.45}
+.close-alert .alert-row{padding:7px 0;border-top:1px solid #f5dfb7;font-size:12px}
+.race-indicator{display:inline-block;font-size:11px;border-radius:7px;margin-top:8px;padding:5px 8px;font-weight:750}
+.race-indicator.leader{background:#e7effb;color:#244977}
+.race-indicator.called{background:#e2f5ef;color:#086847}
+.race-indicator.close{background:#fff0d5;color:#7d4c0a}
+@media(max-width:800px){.close-alert{bottom:10px;right:10px}.insights-board{grid-template-columns:1fr}}
