@@ -19,7 +19,7 @@
     "typescript": "^5.9.0",
     "@types/react": "^19.1.0",
     "@types/node": "^22.0.0",
-    "@types/d3-geo": "^3.1.12",
+    "@types/d3-geo": "^3.1.1",
     "@types/topojson-client": "^3.1.5",
     "@types/topojson-specification": "^1.0.5"
   }
