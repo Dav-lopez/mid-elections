@@ -10,11 +10,17 @@
   "dependencies": {
     "next": "^15.5.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "d3-geo": "^3.1.1",
+    "topojson-client": "^3.1.0",
+    "us-atlas": "^3.0.1"
   },
   "devDependencies": {
     "typescript": "^5.9.0",
     "@types/react": "^19.1.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "@types/d3-geo": "^3.1.12",
+    "@types/topojson-client": "^3.1.5",
+    "@types/topojson-specification": "^1.0.5"
   }
 }
