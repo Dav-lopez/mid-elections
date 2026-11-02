@@ -24,7 +24,7 @@ function abbreviateParty(input: string): string {
   const party = input.trim().toUpperCase();
   return ({ DEM: "D", DEMOCRATIC: "D", REP: "R", REPUBLICAN: "R", LIB: "L", LIBERTARIAN: "L",
     GRE: "G", GREEN: "G", IND: "I", INDEPENDENT: "I", UNA: "U", NON: "—" } as Record<string, string>)[party]
-    ?? party.slice(0, 12) || "—";
+    ?? (party.slice(0, 12) || "—");
 }
 
 async function download(url: string, maxBytes: number): Promise<Buffer> {
