@@ -33,6 +33,7 @@ export default function Home(){
   const [busy,setBusy]=useState(false);
   const [refresh,setRefresh]=useState(0);
   const [closeAlert,setCloseAlert]=useState(false);
+  const [mapMode,setMapMode]=useState<"coverage"|"senate-leaders">("coverage");
   const seenCloseRaces=useRef("");
   const [externalRosters,setExternalRosters]=useState<Record<string,DynamicRoster>>({});
   const [candidateSources,setCandidateSources]=useState<CandidateSource[]>([]);
@@ -128,6 +129,15 @@ export default function Home(){
     const contests=rows.filter(r=>r.state===code && (office==="Both"||r.office===office));
     return [code,{reported:contests.filter(r=>r.reported).length,listed:contests.filter(r=>r.race||r.roster).length,tracked:contests.length}];
   })) as Record<string,{reported:number;listed:number;tracked:number}>;
+  // Never color a whole state by a House district, filings, predictions, or an ambiguous Senate contest.
+  const senateLeadByState=Object.fromEntries(states.flatMap(code=>{
+    const reportedSenate=rows.filter(r=>r.state===code&&r.office==="Senate"&&r.insight.leader);
+    if(reportedSenate.length!==1)return [];
+    const race=reportedSenate[0],leader=race.insight.leader!;
+    if(typeof leader.v!=="number"||!Number.isSafeInteger(leader.v)||leader.v<=0)return [];
+    return [[code,{name:clean(leader.n),party:partyCode(leader.p),seat:race.key,votes:leader.v}]];
+  })) as Record<string,{name:string;party:string;seat:string;votes:number}>;
+  const senateStatesReporting=Object.keys(senateLeadByState).length;
   const dataPublished = reported>0;
   return <main className="dashboard">
     <header className="hero"><div className="eyebrow">CIVICPULSE · SOURCE-AWARE ELECTION INFORMATION</div><h1>Election Results Dashboard</h1><p>Official-source reporting where available. No forecasts, invented totals, or inferred winners.</p><div className="topline"><span>{country==="US"?"United States":"Nigeria"}</span><span>{country==="US"?year:2027} election coverage</span><span>{live?"● Live counting":"● Not live"}</span></div></header>
@@ -195,9 +205,15 @@ export default function Home(){
         </article>):<div className="no-races">No races match these filters. Choose another chamber or state.</div>}
       </div>
       {year===2026&&!dataPublished&&<div className="historical-link"><span>Want to see actual candidate names and vote percentages now? Explore verified historical results.</span><button type="button" onClick={()=>{setYear(2024);setState("All");setSearch("")}}>Explore 2024 results</button></div>}
-      <div className="map-panel"><div className="sectionheading"><div><h2>U.S. results coverage map</h2><p>Interactive state tile map · colors show result and official roster availability, not party control or predictions</p></div><span>{states.filter(code=>mapCounts[code]?.reported>0).length} states with reported contests</span></div>
-        <UsMap counts={mapCounts} selected={state} onSelect={setState}/>
-        <div className="map-legend"><span><i className="legend-swatch tile-reported"/> Votes reported</span><span><i className="legend-swatch tile-listed"/> Result or candidate data, no votes</span><span><i className="legend-swatch tile-pending"/> Not in results feed</span><button type="button" onClick={()=>setState("All")}>Clear state filter</button></div>
+      <div className="map-panel"><div className="sectionheading"><div><h2>{mapMode==="coverage"?"U.S. results coverage map":"Reported Senate vote leaders by state"}</h2><p>{mapMode==="coverage"?"Interactive map · colors show source availability, not party control":"Colors identify the party of the candidate currently leading reported Senate votes. Not a seat call, forecast or statewide House result."}</p></div><span>{mapMode==="coverage"?states.filter(code=>mapCounts[code]?.reported>0).length+" states with reported contests":senateStatesReporting+" states with published Senate leaders"}</span></div>
+        <div className="map-mode" role="group" aria-label="Choose map data layer">
+          <button type="button" aria-pressed={mapMode==="coverage"} className={mapMode==="coverage"?"selected":""} onClick={()=>setMapMode("coverage")}>Source coverage</button>
+          <button type="button" aria-pressed={mapMode==="senate-leaders"} className={mapMode==="senate-leaders"?"selected":""} onClick={()=>setMapMode("senate-leaders")}>Senate vote leader party</button>
+        </div>
+        <UsMap counts={mapCounts} selected={state} onSelect={setState} mode={mapMode} senateLeaders={senateLeadByState}/>
+        {mapMode==="coverage"?<div className="map-legend"><span><i className="legend-swatch tile-reported"/> Votes reported</span><span><i className="legend-swatch tile-listed"/> Candidate/source listing, no votes</span><span><i className="legend-swatch tile-pending"/> No results available</span><button type="button" onClick={()=>setState("All")}>Clear state filter</button></div>:
+        <div className="map-legend"><span><i className="legend-swatch" style={{backgroundColor:"#2563eb"}}/> Democrat currently leading</span><span><i className="legend-swatch" style={{backgroundColor:"#c82b42"}}/> Republican currently leading</span><span><i className="legend-swatch" style={{backgroundColor:"#7251b5"}}/> Independent currently leading</span><span><i className="legend-swatch" style={{backgroundColor:"#dbe5f2"}}/> No substantiated Senate vote leader</span><button type="button" onClick={()=>setState("All")}>Clear state filter</button></div>}
+        {mapMode==="senate-leaders"&&<p className="muted">Senate colors use only published candidate vote counts; missing states remain neutral. House contests are tracked separately by district in the race explorer.</p>}
       </div>
     </section>
     <section className="results"><div className="sectionheading"><div><h2>Race explorer</h2><p>Filter by chamber, state, district, or candidate.</p></div><span>{filtered.length} contests</span></div><div className="filters"><label>Chamber<select value={office} onChange={e=>setOffice(e.target.value as "Both"|Office)}><option>Both</option><option>House</option><option>Senate</option></select></label><label>State<select value={state} onChange={e=>setState(e.target.value)}><option>All</option>{states.map(s=><option key={s}>{s}</option>)}</select></label><label>Search<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="e.g. TX-23 or candidate" /></label></div><div className="tablewrap"><table><thead><tr><th>Contest</th><th>Chamber</th><th>State</th><th>Coverage</th><th>Votes</th><th>Leading / source-called</th><th>Margin</th><th>Precincts</th></tr></thead><tbody>{filtered.slice(0,250).map(r=><tr key={r.office+r.key}><td><strong>{r.key}</strong>{r.candidates.length>0&&<details><summary>{r.candidates.length} candidates</summary>{r.candidates.map((c,i)=><div className="candidate-details" key={i}><span className={"party-badge "+partyClass(c.p)} title={partyLabel(c.p)}>{partyCode(c.p)}</span><span>{clean(c.n)} <span className="party-caption">({partyLabel(c.p)})</span></span><span className="candidate-votes">{nfmt(c.v)} votes</span></div>)}</details>}</td><td>{r.office}</td><td>{r.state}</td><td>{r.reported?"Votes reported":r.race?"Listed, no votes":r.roster?(r.roster.kind==="filing"?"FEC filing; ballot unverified":"Official candidates; votes pending"):r.feed?"Not in feed":"Source unavailable"}</td><td>{nfmt(r.race?.total)}</td><td>{r.insight.sourceCalledWinner?"Source called: "+clean(r.insight.sourceCalledWinner):r.insight.leader?clean(r.insight.leader.n)+" ("+partyLabel(r.insight.leader.p)+")":"—"}</td><td>{r.insight.voteMargin!==null?nfmt(r.insight.voteMargin)+" votes"+(r.insight.marginPct!==null?" / "+r.insight.marginPct.toFixed(2)+"%":""):"—"}</td><td>{typeof r.race?.pct_in==="number"&&r.race.pct_in>=0&&r.race.pct_in<=100?r.race.pct_in+"%":"—"}</td></tr>)}</tbody></table></div>{filtered.length>250&&<p className="muted">Showing the first 250 matching contests. Narrow the state or search to see other races.</p>}</section></>}
