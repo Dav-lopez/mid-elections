@@ -50,3 +50,10 @@
 }
 
 .roster-source{font-size:11px;color:#075d8e;text-decoration:underline;line-height:1.4;display:block;margin:6px 0 12px}
+
+/* True state-boundary map, with Alaska and Hawaii inset by the Albers USA projection. */
+.us-choropleth{display:block;width:100%;height:auto;max-height:510px;margin:15px auto;overflow:visible}
+.state-shape{stroke:white;stroke-width:1.5;cursor:pointer;transition:filter .12s;outline:none}
+.state-shape:hover,.state-shape:focus-visible{filter:brightness(.88);stroke:#14233b;stroke-width:2.8}
+.state-shape.shape-selected{stroke:#f1ab36;stroke-width:4;filter:brightness(.96)}
+@media(max-width:800px){.us-choropleth{margin:8px auto;max-height:340px}.state-shape{stroke-width:2}}
