@@ -57,7 +57,7 @@ export default function Home(){
   const rows=useMemo(()=>{
     if(country!=="US")return [];
     const registry=year===2026?seats:[...new Set([...Object.values(feeds).flatMap(f=>f&&f.year===year?Object.entries(f.races).map(([key])=>({office:f.office as Office,state:key.slice(0,2),key})):[])])];
-    return registry.map(s=>{const f=feeds[s.office]?.year===year?feeds[s.office]:undefined;const race=f?.races?.[s.key]??null;const feedCandidates=Array.isArray(race?.cands)?race.cands.filter(c=>c&&typeof c.n==="string"):[];const roster=year===2026?officialRosters[s.office+":"+s.key]:undefined;const candidates=feedCandidates.length?feedCandidates:roster?.candidates??[];const reported=validVotes(race?.total)&&race.total>0||candidates.some(c=>validVotes(c.v)&&c.v>0);return {...s,race,candidates,reported,roster,feed:f};});
+    return registry.map(s=>{const f=feeds[s.office]?.year===year?feeds[s.office]:undefined;const race=f?.races?.[s.key]??null;const feedCandidates=Array.isArray(race?.cands)?race.cands.filter(c=>c&&typeof c.n==="string"):[];const roster=year===2026?officialRosters[s.office+":"+s.key]:undefined;const candidates=feedCandidates.length?feedCandidates:(roster?.candidates.map(c=>({...c,v:null,pct:null}))??[]);const reported=validVotes(race?.total)&&race.total>0||candidates.some(c=>validVotes(c.v)&&c.v>0);return {...s,race,candidates,reported,roster,feed:f};});
   },[country,year,feeds]);
   const filtered=rows.filter(r=>(office==="Both"||r.office===office)&&(state==="All"||r.state===state)&&(!search||r.key.toLowerCase().includes(search.toLowerCase())||r.candidates.some(c=>clean(c.n).toLowerCase().includes(search.toLowerCase()))));
   const listed=rows.filter(r=>r.race).length,reported=rows.filter(r=>r.reported).length;
