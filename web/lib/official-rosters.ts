@@ -9,6 +9,7 @@ const ohioSource="https://www.boe.ohio.gov/abmt/oh75/20261103/X0029__1_0029_PERR
 const iowa=(candidates:RosterCandidate[]):OfficialRoster=>({authority:"Iowa Secretary of State",verifiedAsOf:"2026-08-19",sourceUrl:iowaSource,candidates});
 export const officialRosters:Record<string,OfficialRoster>={
   "Senate:IA":iowa([{n:"Ashley Hinson",p:"R"},{n:"Josh Turek",p:"D"},{n:"Thomas Laehn",p:"L"}]),
+  "Governor:IA":iowa([{n:"Zach Lahn",p:"R"},{n:"Rob Sand",p:"D"}]),
   "House:IA-01":iowa([{n:"Mariannette Miller-Meeks",p:"R"},{n:"Christina Bohannan",p:"D"},{n:"Michael Bridgford",p:"I"}]),
   "House:IA-02":iowa([{n:"Joe Mitchell",p:"R"},{n:"Lindsay James",p:"D"},{n:"Rick Stewart",p:"L"},{n:"Dave Bushaw",p:"I"}]),
   "House:IA-03":iowa([{n:"Zach Nunn",p:"R"},{n:"Sarah Trone Garriott",p:"D"}]),
