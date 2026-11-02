@@ -15,7 +15,7 @@ export const officialRosters:Record<string,OfficialRoster>={
   "House:IA-04":iowa([{n:"Chris McGowan",p:"R"},{n:"Dave Dawson",p:"D"}]),
   "Senate:OH-SPECIAL":{
     authority:"Ohio Board of Elections — official November 3 sample ballot",
-    verifiedAsOf:"2026-10-01",
+    verifiedAsOf:"2026-11-02",
     sourceUrl:ohioSource,
     candidates:[{n:"Sherrod Brown",p:"D"},{n:"Jon Husted",p:"R"},{n:"Greg Levy",p:"I"},{n:"William B. Redpath",p:"L"}]
   }
