@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import "./dashboard.css";
 import { officialRosters } from "../lib/official-rosters";
+import UsMap from "../components/us-map";
 
 type Candidate = { n?: string; p?: string; v?: number | null; pct?: number | null };
 type Race = { cands?: Candidate[]; total?: number | null; pct_in?: number | null; leader?: string | null; winner?: string | null; called?: boolean };
@@ -63,15 +64,6 @@ export default function Home(){
   const listed=rows.filter(r=>r.race).length,reported=rows.filter(r=>r.reported).length;
   const live=Object.values(feeds).some(f=>f?.year===year&&f.live);
 
-  const tileRows = [
-    "-- -- -- -- -- -- -- -- -- -- -- ME",
-    "WA -- MT ND MN -- WI MI -- VT NH --",
-    "OR ID -- SD IA IL IN OH PA NY MA --",
-    "CA NV WY NE MO KY WV VA NJ CT RI --",
-    "-- UT CO KS AR TN NC SC DE MD -- --",
-    "-- AZ NM OK -- LA MS AL GA -- -- --",
-    "AK HI -- TX -- -- -- -- FL -- -- --",
-  ].map(line=>line.split(" "));
   const featuredKeys = ["IA", "OH-SPECIAL", "KS", "NC", "TX", "GA", "FL-SPECIAL", "MI"];
   const featured = (year === 2026 && state === "All" && !search
     ? featuredKeys.flatMap(key=>rows.filter(r=>r.key===key && (office==="Both"||office===r.office)))
@@ -112,9 +104,7 @@ export default function Home(){
       </div>
       {year===2026&&!dataPublished&&<div className="historical-link"><span>Want to see actual candidate names and vote percentages now? Explore verified historical results.</span><button type="button" onClick={()=>{setYear(2024);setState("All");setSearch("")}}>Explore 2024 results</button></div>}
       <div className="map-panel"><div className="sectionheading"><div><h2>U.S. results coverage map</h2><p>Interactive state tile map · colors show result and official roster availability, not party control or predictions</p></div><span>{states.filter(code=>mapCounts[code]?.reported>0).length} states with reported contests</span></div>
-        <div className="tile-map" role="group" aria-label="Select state to filter contests">
-          {tileRows.flatMap((line,i)=>line.map((code,j)=>code==="--"?<span key={i+"-"+j} aria-hidden="true" className="tile-blank"/>:<button key={code} type="button" title={code+": "+mapCounts[code].reported+" contests reporting, "+mapCounts[code].listed+" source-listed"} aria-label={code+", "+mapCounts[code].reported+" contests with votes; filter races"} aria-pressed={state===code} onClick={()=>setState(state===code?"All":code)} className={"state-tile "+(mapCounts[code].reported>0?"tile-reported":mapCounts[code].listed>0?"tile-listed":"tile-pending")+(state===code?" tile-active":"")}>{code}</button>))}
-        </div>
+        <UsMap counts={mapCounts} selected={state} onSelect={setState}/>
         <div className="map-legend"><span><i className="legend-swatch tile-reported"/> Votes reported</span><span><i className="legend-swatch tile-listed"/> Result or official candidate list, no votes</span><span><i className="legend-swatch tile-pending"/> Not in results feed</span><button type="button" onClick={()=>setState("All")}>Clear state filter</button></div>
       </div>
     </section>
