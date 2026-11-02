@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { partyCode, partyLabel, raceInsight } from "../lib/race-insights.ts";
+import { partyCode, partyLabel, raceInsight, sourceCalledParty } from "../lib/race-insights.ts";
 
 test("party names and abbreviations are displayed consistently", () => {
   assert.equal(partyCode("DEM"), "D");
@@ -56,4 +56,12 @@ test("an inconsistent total cannot yield a misleading margin percentage", () => 
   const insight=raceInsight({total:100,cands:[{n:"A",v:90},{n:"B",v:80}]});
   assert.equal(insight.marginPct,null);
   assert.equal(insight.close,false);
+});
+
+test("a publisher-called seat gets a party only with an exact reported candidate match", () => {
+  const race={total:500,cands:[{n:"Candidate A",p:"DEM",v:300},{n:"Candidate B",p:"REP",v:200}],called:true,winner:"Candidate A"};
+  assert.equal(sourceCalledParty(race),"D");
+  assert.equal(sourceCalledParty({...race,winner:"Unlisted Name"}),null);
+  assert.equal(sourceCalledParty({...race,called:false}),null);
+  assert.equal(sourceCalledParty({...race,total:0,cands:[{n:"Candidate A",p:"D",v:0}]}),null);
 });

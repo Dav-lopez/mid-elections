@@ -102,3 +102,10 @@
 .race-indicator.called{background:#e2f5ef;color:#086847}
 .race-indicator.close{background:#fff0d5;color:#7d4c0a}
 @media(max-width:800px){.close-alert{bottom:10px;right:10px}.insights-board{grid-template-columns:1fr}}
+
+.map-mode{display:flex;gap:9px;flex-wrap:wrap;margin:16px 0 6px}
+.map-mode button{cursor:pointer;border:1px solid #b9ccdb;border-radius:9px;background:#eff4f9;color:#344c68;padding:9px 14px;font-size:13px;font-weight:750}
+.map-mode button.selected,.map-mode button[aria-pressed="true"]{background:#14233b;border-color:#14233b;color:#fff}
+.map-mode button:focus-visible{outline:3px solid #f1ab36;outline-offset:2px}
+.map-panel .map-legend{margin-top:12px}
+.map-panel .map-legend .legend-swatch{flex:0 0 14px}
