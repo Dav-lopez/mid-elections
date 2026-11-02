@@ -71,3 +71,13 @@ export function raceInsight(race: BoardRace | null | undefined): RaceInsight {
     sourceCalledWinner
   };
 }
+
+/** Resolve the party of an explicit publisher-called winner only when its name matches a reported candidate. */
+export function sourceCalledParty(race: BoardRace | null | undefined): string | null {
+  const winner = raceInsight(race).sourceCalledWinner?.toLocaleLowerCase("en-US");
+  if (!winner || !Array.isArray(race?.cands)) return null;
+  const matched = race.cands.find(c =>
+    typeof c?.n === "string" && c.n.trim().toLocaleLowerCase("en-US") === winner
+  );
+  return matched ? partyCode(matched.p) : null;
+}
