@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./dashboard.css";
 import { officialRosters } from "../lib/official-rosters";
 import UsMap from "../components/us-map";
+import { partyCode, partyLabel, raceInsight } from "../lib/race-insights";
 
 type Candidate = { n?: string; p?: string; v?: number | null; pct?: number | null };
 type Race = { cands?: Candidate[]; total?: number | null; pct_in?: number | null; leader?: string | null; winner?: string | null; called?: boolean };
@@ -19,6 +20,7 @@ const validVotes=(x:unknown):x is number=>typeof x==="number"&&Number.isSafeInte
 const nfmt=(x:unknown)=>validVotes(x)?x.toLocaleString("en-US"):"Not reported";
 const clean=(s:unknown)=>typeof s==="string"?s.slice(0,120):"";
 const baseUrl=(year:number,office:Office)=>API+"?year="+year+"&office="+office;
+const partyClass=(party:unknown)=>({D:"party-dem",R:"party-rep",I:"party-ind",L:"party-lib",G:"party-green"} as Record<string,string>)[partyCode(party)]??"party-other";
 export default function Home(){
   const [year,setYear]=useState(2026);
   const [country,setCountry]=useState<"US"|"NG">("US");
@@ -30,18 +32,26 @@ export default function Home(){
   const [checked,setChecked]=useState<string|null>(null);
   const [busy,setBusy]=useState(false);
   const [refresh,setRefresh]=useState(0);
+  const [closeAlert,setCloseAlert]=useState(false);
+  const seenCloseRaces=useRef("");
   const [externalRosters,setExternalRosters]=useState<Record<string,DynamicRoster>>({});
   const [candidateSources,setCandidateSources]=useState<CandidateSource[]>([]);
   const [candidateError,setCandidateError]=useState("");
   const [candidatesChecked,setCandidatesChecked]=useState<string|null>(null);
   useEffect(()=>{
-    if(country!=="US"){setFeeds({});setErrors({});return;}
+    if(country!=="US"){setFeeds({});setErrors({});setBusy(false);return;}
     let cancelled=false;
+    let pending=false;
+    let activeController:AbortController|null=null;
     const get=async()=>{
+      if(pending || cancelled)return;
+      pending=true;
       setBusy(true);
+      const controller=new AbortController();
+      activeController=controller;
       const results=await Promise.all((["House","Senate"] as Office[]).map(async o=>{
         try {
-          const response=await fetch(baseUrl(year,o),{cache:"no-store",headers:{"Accept":"application/json"}});
+          const response=await fetch(baseUrl(year,o),{cache:"no-store",headers:{"Accept":"application/json"},signal:controller.signal});
           if(!response.ok)throw new Error("HTTP "+response.status);
           const data:unknown=await response.json();
           if(!data||typeof data!=="object")throw new Error("Invalid feed");
@@ -50,17 +60,21 @@ export default function Home(){
           return {office:o,feed:f,error:null};
         }catch(e){return {office:o,feed:null,error:e instanceof Error?e.message:"Request failed"};}
       }));
+      pending=false;
       if(cancelled)return;
+      activeController=null;
       setFeeds(prev=>{const next={...prev};for(const r of results){if(r.feed)next[r.office]=r.feed;else if(prev[r.office]?.year!==year)delete next[r.office];}return next;});
       setErrors(Object.fromEntries(results.filter(r=>r.error).map(r=>[r.office,r.error])) as Partial<Record<Office,string>>);
       setChecked(new Date().toISOString());
       setBusy(false);
     };
     void get();
-    const timer=setInterval(()=>setRefresh(v=>v+1),feeds.House?.live||feeds.Senate?.live?60000:600000);
-    return ()=>{cancelled=true;clearInterval(timer);};
-    // The timer resets with the live status; each cycle cleans up the previous timer.
-  },[year,country,refresh,feeds.House?.live,feeds.Senate?.live]);
+    // A five-second on-screen check; never overlap slow requests or poll hidden tabs.
+    const timer=setInterval(()=>{if(document.visibilityState==="visible")void get();},5000);
+    const onVisible=()=>{if(document.visibilityState==="visible")void get();};
+    document.addEventListener("visibilitychange",onVisible);
+    return ()=>{cancelled=true;activeController?.abort();clearInterval(timer);document.removeEventListener("visibilitychange",onVisible);};
+  },[year,country,refresh]);
   useEffect(()=>{
     if(country!=="US" || year!==2026) return;
     let cancelled=false;
@@ -88,15 +102,26 @@ export default function Home(){
   const rows=useMemo(()=>{
     if(country!=="US")return [];
     const registry=year===2026?seats:[...new Set([...Object.values(feeds).flatMap(f=>f&&f.year===year?Object.entries(f.races).map(([key])=>({office:f.office as Office,state:key.slice(0,2),key})):[])])];
-    return registry.map(s=>{const f=feeds[s.office]?.year===year?feeds[s.office]:undefined;const race=f?.races?.[s.key]??null;const feedCandidates=Array.isArray(race?.cands)?race.cands.filter(c=>c&&typeof c.n==="string"):[];const remote=year===2026?externalRosters[s.office+":"+s.key]:undefined;const manual=year===2026?officialRosters[s.office+":"+s.key]:undefined;const roster=remote?.kind==="ballot"?remote:manual?{...manual,kind:"ballot" as const}:remote;const candidates=feedCandidates.length?feedCandidates:(roster?.candidates.map(c=>({...c,v:null,pct:null}))??[]);const reported=validVotes(race?.total)&&race.total>0||candidates.some(c=>validVotes(c.v)&&c.v>0);return {...s,race,candidates,reported,roster,feed:f};});
+    return registry.map(s=>{const f=feeds[s.office]?.year===year?feeds[s.office]:undefined;const race=f?.races?.[s.key]??null;const feedCandidates=Array.isArray(race?.cands)?race.cands.filter(c=>c&&typeof c.n==="string"):[];const remote=year===2026?externalRosters[s.office+":"+s.key]:undefined;const manual=year===2026?officialRosters[s.office+":"+s.key]:undefined;const roster=remote?.kind==="ballot"?remote:manual?{...manual,kind:"ballot" as const}:remote;const candidates=feedCandidates.length?feedCandidates:(roster?.candidates.map(c=>({...c,v:null,pct:null}))??[]);const reported=validVotes(race?.total)&&race.total>0||candidates.some(c=>validVotes(c.v)&&c.v>0);const insight=raceInsight(race);return {...s,race,candidates,reported,roster,feed:f,insight};});
   },[country,year,feeds,externalRosters]);
   const filtered=rows.filter(r=>(office==="Both"||r.office===office)&&(state==="All"||r.state===state)&&(!search||r.key.toLowerCase().includes(search.toLowerCase())||r.candidates.some(c=>clean(c.n).toLowerCase().includes(search.toLowerCase()))));
   const listed=rows.filter(r=>r.race).length,reported=rows.filter(r=>r.reported).length;
   const live=Object.values(feeds).some(f=>f?.year===year&&f.live);
 
+  const closeContests=rows.filter(r=>r.insight.close).sort((a,b)=>(a.insight.marginPct??100)-(b.insight.marginPct??100));
+  const calledContests=rows.filter(r=>r.insight.sourceCalledWinner!==null);
+  const leadingContests=rows.filter(r=>r.insight.leader!==null);
+  const visibleClose=closeContests.filter(r=>state==="All"||r.state===state);
+  const closeSignature=year===2026&&country==="US"?closeContests.map(r=>r.office+":"+r.key).join("|"):"";
+  useEffect(()=>{
+    if(closeSignature && closeSignature!==seenCloseRaces.current)setCloseAlert(true);
+    seenCloseRaces.current=closeSignature;
+  },[closeSignature]);
+  const chooseRace=(r:{office:Office;state:string})=>{setOffice(r.office);setState(r.state);setSearch("");setCloseAlert(false);};
   const featuredKeys = ["IA", "OH-SPECIAL", "KS", "NC", "TX", "GA", "FL-SPECIAL", "MI"];
   const featured = (year === 2026 && state === "All" && !search
-    ? featuredKeys.flatMap(key=>rows.filter(r=>r.key===key && (office==="Both"||office===r.office)))
+    ? [...new Set([...closeContests.slice(0,6).map(r=>r.key),...calledContests.slice(0,6).map(r=>r.key),...featuredKeys])]
+      .flatMap(key=>rows.filter(r=>r.key===key && (office==="Both"||office===r.office)))
     : filtered.filter(r=>r.race || year===2026)
   ).slice(0,12);
   const mapCounts = Object.fromEntries(states.map(code=>{
