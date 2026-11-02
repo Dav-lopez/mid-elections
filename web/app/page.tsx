@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import "./dashboard.css";
 import { officialRosters } from "../lib/official-rosters";
 import UsMap from "../components/us-map";
-import { partyCode, partyLabel, raceInsight } from "../lib/race-insights";
+import { partyCode, partyLabel, raceInsight, sourceCalledParty } from "../lib/race-insights";
 
 type Candidate = { n?: string; p?: string; v?: number | null; pct?: number | null };
 type Race = { cands?: Candidate[]; total?: number | null; pct_in?: number | null; leader?: string | null; winner?: string | null; called?: boolean };
@@ -112,6 +112,7 @@ export default function Home(){
   const closeContests=rows.filter(r=>r.insight.close).sort((a,b)=>(a.insight.marginPct??100)-(b.insight.marginPct??100));
   const calledContests=rows.filter(r=>r.insight.sourceCalledWinner!==null);
   const leadingContests=rows.filter(r=>r.insight.leader!==null);
+  const calledByParty=(code:string)=>calledContests.filter(r=>sourceCalledParty(r.race)===code).length;
   const visibleClose=closeContests.filter(r=>state==="All"||r.state===state);
   const closeSignature=year===2026&&country==="US"?closeContests.map(r=>r.office+":"+r.key).join("|"):"";
   useEffect(()=>{
@@ -173,10 +174,10 @@ export default function Home(){
       </div>
       <div className="insight-panel">
         <h3>Source-called seats <span className="party-caption">({calledContests.length})</span></h3>
-        <p>House: {calledContests.filter(r=>r.office==="House").length} · Senate: {calledContests.filter(r=>r.office==="Senate").length}. Calls are attributed to the feed and are not certifications.</p>
+        <p>House: {calledContests.filter(r=>r.office==="House").length} · Senate: {calledContests.filter(r=>r.office==="Senate").length}.</p><p>Source-called seats by verified reported candidate party: Democratic {calledByParty("D")} · Republican {calledByParty("R")} · Other or unmatched {calledContests.length-calledByParty("D")-calledByParty("R")}. Partial provider coverage; not national seat control or certification.</p>
         {calledContests.length===0?<p>No seat winners have been explicitly called by the current source.</p>:calledContests.filter(r=>state==="All"||r.state===state).slice(0,5).map(r=><div className="insight-entry" key={r.office+r.key}>
           <button type="button" onClick={()=>chooseRace(r)}>{r.key} · {r.office}</button>
-          <span className="insight-sub">{clean(r.insight.sourceCalledWinner)}</span>
+          <span className={"party-badge "+partyClass(sourceCalledParty(r.race))} title={partyLabel(sourceCalledParty(r.race))}>{partyCode(sourceCalledParty(r.race))}</span><span className="insight-sub">{clean(r.insight.sourceCalledWinner)}</span>
         </div>)}
       </div>
     </section>
