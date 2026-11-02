@@ -50,7 +50,7 @@ export function raceInsight(race: BoardRace | null | undefined): RaceInsight {
     c => c && typeof c.n === "string" && c.n.trim().length > 0 && safeVote(c.v)
   );
   const sorted = candidates.slice().sort((a, b) => (b.v as number) - (a.v as number));
-  const hasVotes = sorted.some(c => (c.v as number) > 0) || (safeVote(race?.total) && race.total > 0);
+  const hasVotes = sorted.some(c => (c.v as number) > 0) || (safeVote(race?.total) && (race?.total ?? 0) > 0);
   const winnerName = typeof race?.winner === "string" ? race.winner.trim() : "";
   // A source call requires an explicit 'called' flag and positive published votes.
   const sourceCalledWinner = hasVotes && race?.called === true && winnerName ? winnerName : null;
