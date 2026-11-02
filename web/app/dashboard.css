@@ -48,3 +48,5 @@
 .tile-map{gap:3px}.state-tile{border-radius:3px;font-size:9px;aspect-ratio:.9}
 .historical-link{align-items:stretch;flex-direction:column}.historical-link button{align-self:flex-start}
 }
+
+.roster-source{font-size:11px;color:#075d8e;text-decoration:underline;line-height:1.4;display:block;margin:6px 0 12px}
