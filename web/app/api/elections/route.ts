@@ -20,7 +20,8 @@ export async function GET(request: NextRequest) {
     const response = await fetch(url.toString(), {
       signal: AbortSignal.timeout(TIMEOUT_MS),
       headers: { Accept: "application/json" },
-      cache: "no-store"
+      // Clients check every five seconds; share upstream snapshots for 30 seconds.
+      next: { revalidate: 30 }
     });
     if (!response.ok) return NextResponse.json({ error: "Source unavailable" }, { status: 502 });
     const contentLength = Number(response.headers.get("content-length"));
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
         !["live", "stale", "counting", "final"].every(field => typeof data[field] === "boolean")) {
       throw new Error("Unexpected feed schema");
     }
-    return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(payload, { headers: { "Cache-Control": "public, s-maxage=5, stale-while-revalidate=25" } });
   } catch {
     return NextResponse.json({ error: "Election source request failed" }, { status: 502 });
   }
