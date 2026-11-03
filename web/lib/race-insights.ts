@@ -81,3 +81,8 @@ export function sourceCalledParty(race: BoardRace | null | undefined): string | 
   );
   return matched ? partyCode(matched.p) : null;
 }
+
+/** Normalize documented provider identifiers: Senate special keys end in lower-case '-special'. */
+export function providerSeatKey(office:"House"|"Senate"|"Governor",seat:string):string {
+  return office==="Senate" ? seat.replace(/-SPECIAL$/i,"-special") : seat;
+}
