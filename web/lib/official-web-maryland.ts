@@ -79,7 +79,7 @@ export function parseMarylandHouse(html:string,district:number):OfficialPageCont
     const identifier=(name+"|"+party).toUpperCase();
     if(seen.has(identifier))continue;
     seen.add(identifier);
-    candidates.push({n:name,p:party,v:votes,pct:percentage(row[pctCol]??"")});
+    candidates.push({n:name,p:party,v:votes,pct:votes!==null && votes>0?percentage(row[pctCol]??""):null});
     if(candidates.length>=24)break;
   }
   if(!candidates.length)throw new Error("Maryland results table contains no identifiable candidates");
