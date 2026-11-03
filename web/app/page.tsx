@@ -8,7 +8,7 @@ import { partyCode, partyLabel, raceInsight, sourceCalledParty } from "../lib/ra
 type Candidate = { n?: string; p?: string; v?: number | null; pct?: number | null };
 type Race = { cands?: Candidate[]; total?: number | null; pct_in?: number | null; leader?: string | null; winner?: string | null; called?: boolean };
 type Feed = { api: number; year: number; office: string; live: boolean; stale: boolean; counting: boolean; final: boolean; as_of: string | null; source: string; races: Record<string, Race> };
-type Office = "House" | "Senate";
+type Office = "House" | "Senate" | "Governor";
 type CandidateSource = { authority: string; status: string; url: string };
 type DynamicRoster = { authority: string; sourceUrl: string; kind: "ballot" | "filing"; candidates: {n:string;p:string}[] };
 type WebContest = { seat:string; cands:Candidate[]; total:number|null; pct_in:number|null; called:false; winner:""; sourceUrl:string; updatedLabel:string|null };
@@ -57,7 +57,7 @@ export default function Home(){
       setBusy(true);
       const controller=new AbortController();
       activeController=controller;
-      const results=await Promise.all((["House","Senate"] as Office[]).map(async o=>{
+      const results=await Promise.all((["House","Senate","Governor"] as Office[]).map(async o=>{
         try {
           const response=await fetch(baseUrl(year,o),{cache:"no-store",headers:{"Accept":"application/json"},signal:controller.signal});
           if(!response.ok)throw new Error("HTTP "+response.status);
@@ -141,11 +141,15 @@ export default function Home(){
   },[country,year]);
   const rows=useMemo(()=>{
     if(country!=="US")return [];
-    const registry=year===2026?seats:[...new Set([...Object.values(feeds).flatMap(f=>f&&f.year===year?Object.entries(f.races).map(([key])=>({office:f.office as Office,state:key.slice(0,2),key})):[])])];
+    const providerContests=Object.values(feeds).flatMap(f=>f&&f.year===year?Object.keys(f.races).map(key=>({office:f.office as Office,state:key.slice(0,2).toUpperCase(),key:key.replace(/-special$/i,"-SPECIAL")})):[]);
+    // Governor contests are added only when the provider actually reports them.
+    const registry=year===2026?[...seats,...providerContests.filter(r=>r.office==="Governor")]:providerContests;
     return registry.map(s=>{
       const f=feeds[s.office]?.year===year?feeds[s.office]:undefined;
       const web=year===2026?webContests[s.office+":"+s.key]:undefined;
-      const race:Race|null=f?.races?.[s.key]??(web?{
+      // The published Senate-special feed key is "FL-special" / "OH-special".
+      const publishedKey=s.office==="Senate"?s.key.replace(/-SPECIAL$/,"-special"):s.key;
+      const race:Race|null=f?.races?.[s.key]??f?.races?.[publishedKey]??(web?{
         cands:web.cands,total:web.total,pct_in:web.pct_in,called:false,winner:""
       }:null);
       const feedCandidates=Array.isArray(race?.cands)?race.cands.filter(c=>c&&typeof c.n==="string"):[];
@@ -162,6 +166,12 @@ export default function Home(){
   const filtered=rows.filter(r=>(office==="Both"||r.office===office)&&(state==="All"||r.state===state)&&(!search||r.key.toLowerCase().includes(search.toLowerCase())||r.candidates.some(c=>clean(c.n).toLowerCase().includes(search.toLowerCase()))));
   const listed=rows.filter(r=>r.race).length,reported=rows.filter(r=>r.reported).length;
   const live=Object.values(feeds).some(f=>f?.year===year&&f.live);
+  const reportingSources=(["House","Senate","Governor"] as Office[]).map(o=>{
+    const feed=feeds[o]?.year===year?feeds[o]:undefined;
+    const raceCount=feed?Object.keys(feed.races).length:0;
+    return {office:o,loaded:!!feed,raceCount,counting:feed?.counting??false,
+      live:feed?.live??false,stale:feed?.stale??false,asOf:feed?.as_of??null};
+  });
 
   const closeContests=rows.filter(r=>r.insight.close).sort((a,b)=>(a.insight.marginPct??100)-(b.insight.marginPct??100));
   const calledContests=rows.filter(r=>r.insight.sourceCalledWinner!==null);
@@ -201,6 +211,17 @@ export default function Home(){
     {country==="NG"?<section className="notice"><h2>Nigeria 2027 · Integration pending</h2><p>INEC-backed election feeds and validated candidate rosters are not connected yet. No Nigerian vote totals are displayed.</p></section>:<>
     <section className="metrics"><article><span>Tracked contests</span><strong>{rows.length.toLocaleString()}</strong></article><article><span>Listed by provider</span><strong>{listed.toLocaleString()}</strong></article><article><span>Contests with votes</span><strong>{reported.toLocaleString()}</strong></article><article><span>Feed status</span><strong>{live?"Live":Object.values(feeds).some(f=>f?.stale)?"Stale":"Not live"}</strong></article></section>
     <section className="notice"><strong>{year===2024?"Historical 2024 vote totals — not 2026 results.":"2026 general election · November 3, 2026"}</strong><p>Counts are displayed only when published by the source. Missing results are not zero. Precinct completion does not mean certification. A vote leader is not necessarily a winner.</p><p>Source: <a href="https://openamerica.io/elections/api/" target="_blank" rel="noreferrer">Open America election API, relaying state election-office counts</a>. Publisher timestamp: {Object.values(feeds).filter(f=>f?.year===year&&f.as_of).map(f=>f?.office+": "+new Date(f!.as_of!).toLocaleString()).join(" · ")||"Not published"}. Last checked: {checked?new Date(checked).toLocaleString():"Not checked"}.</p>{Object.entries(errors).map(([o,error])=><p className="warning" key={o}>{o}: source unavailable ({error}). Previously retrieved data may be stale.</p>)}</section>
+    <section className="notice" aria-label="Results provider reporting status">
+      <strong>Connected results-feed status by office</strong>
+      <p>Provider coverage is partial (22 states). A successful check with zero races means the provider has not yet published matching returns; it does not mean zero votes. Reported totals update only when upstream state results change.</p>
+      <div className="source-grid">{reportingSources.map(source=><div key={source.office} className="source-item">
+        <strong>{source.office}</strong>
+        <span>{!source.loaded?"Unavailable":source.raceCount+" published contests"}</span>
+        <span>{source.live?"Live reporting":source.stale?"Stale publication":source.counting?"Published counts (not live)":"Awaiting results"}</span>
+        <span>Source timestamp: {source.asOf?new Date(source.asOf).toLocaleString():"Not yet published"}</span>
+      </div>)}</div>
+      <p className="muted">The five-second dashboard check does not create new counts. The upstream feed is cached and recommends polling once a minute while live. This provider does not declare seat winners.</p>
+    </section>
     {year===2026&&<section className="notice" aria-label="Candidate source provenance">
       <strong>Candidate names and parties are independent of vote counting.</strong>
       <p>State ballot lists take precedence over FEC candidate filings. FEC filings may include primary candidates, withdrawn candidates, or people not on the November ballot; they are <strong>not verified ballot rosters</strong>.</p>
@@ -245,13 +266,13 @@ export default function Home(){
     <section className="live-board" aria-label="Election race cards and state map">
       <div className="sectionheading"><div><span className="section-kicker">ELECTION NIGHT BOARD</span><h2>{year===2024?"2024 published results":"2026 midterm elections"}</h2><p>{year===2024?"Historical state-published totals, not a 2026 forecast":"November 3, 2026 · official vote counts appear as they are published"}</p></div><span className={live?"live-tag counting":"live-tag"}>{live?"● LIVE COUNTING":dataPublished?"● PUBLISHED COUNTS":"○ AWAITING RETURNS"}</span></div>
       <div className="chamber-tabs" role="group" aria-label="Filter by chamber">
-        {(["Senate","House","Both"] as const).map(o=><button key={o} type="button" aria-pressed={office===o} className={office===o?"selected":""} onClick={()=>setOffice(o)}>{o==="Both"?"All contests":o}</button>)}
-        <span className="tab-note">Governor feeds are planned, not yet integrated.</span>
+        {(["Senate","House","Governor","Both"] as const).map(o=><button key={o} type="button" aria-pressed={office===o} className={office===o?"selected":""} onClick={()=>setOffice(o)}>{o==="Both"?"All contests":o}</button>)}
+        <span className="tab-note">Governor results appear where the connected provider publishes them.</span>
       </div>
       <div className="race-carousel" aria-label="Featured races">
         {featured.length ? featured.map(r=><article className="race-card" key={r.office+r.key}>
-          <div className="race-card-top"><span>{r.state} · {r.office==="Senate"?"U.S. Senate":"U.S. House"}</span><span className="small-date">{year===2024?"2024 archive":"Nov 3"}</span></div>
-          <h3>{r.key.endsWith("-SPECIAL")?r.state+" Senate special":r.key}</h3>
+          <div className="race-card-top"><span>{r.state} · {r.office==="Senate"?"U.S. Senate":r.office==="Governor"?"Governor":"U.S. House"}</span><span className="small-date">{year===2024?"2024 archive":"Nov 3"}</span></div>
+          <h3>{r.office==="Governor"?r.state+" Governor":r.key.endsWith("-SPECIAL")?r.state+" Senate special":r.key}</h3>
           <div className="race-status">{r.reported?"Votes reported":r.race?"Listed · no votes":r.roster?(r.roster.kind==="filing"?"FEC filings · ballot status unverified":"Official candidate list · no votes"):"Awaiting source publication"}</div>
           {r.insight.sourceCalledWinner?<span className="race-indicator called">Source called: {clean(r.insight.sourceCalledWinner)} · not certified</span>:r.insight.leader?<span className={"race-indicator "+(r.insight.close?"close":"leader")}>{r.insight.close?"CLOSE · ":"Leading · "}{clean(r.insight.leader.n)}{r.insight.voteMargin!==null?" by "+nfmt(r.insight.voteMargin)+" votes":""}{r.insight.marginPct!==null?" ("+r.insight.marginPct.toFixed(2)+"%)":""}</span>:null}
           {r.candidates.length>0 ? <div className="card-candidates">
@@ -278,7 +299,7 @@ export default function Home(){
         {mapMode==="senate-leaders"&&<p className="muted">Senate colors use only published candidate vote counts; missing states remain neutral. House contests are tracked separately by district in the race explorer.</p>}
       </div>
     </section>
-    <section className="results"><div className="sectionheading"><div><h2>Race explorer</h2><p>Filter by chamber, state, district, or candidate.</p></div><span>{filtered.length} contests</span></div><div className="filters"><label>Chamber<select value={office} onChange={e=>setOffice(e.target.value as "Both"|Office)}><option>Both</option><option>House</option><option>Senate</option></select></label><label>State<select value={state} onChange={e=>setState(e.target.value)}><option>All</option>{states.map(s=><option key={s}>{s}</option>)}</select></label><label>Search<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="e.g. TX-23 or candidate" /></label></div><div className="tablewrap"><table><thead><tr><th>Contest</th><th>Chamber</th><th>State</th><th>Coverage</th><th>Votes</th><th>Leading / source-called</th><th>Margin</th><th>Precincts</th></tr></thead><tbody>{filtered.slice(0,250).map(r=><tr key={r.office+r.key}><td><strong>{r.key}</strong>{r.candidates.length>0&&<details><summary>{r.candidates.length} candidates</summary>{r.candidates.map((c,i)=><div className="candidate-details" key={i}><span className={"party-badge "+partyClass(c.p)} title={partyLabel(c.p)}>{partyCode(c.p)}</span><span>{clean(c.n)} <span className="party-caption">({partyLabel(c.p)})</span></span><span className="candidate-votes">{nfmt(c.v)} votes</span></div>)}</details>}</td><td>{r.office}</td><td>{r.state}</td><td>{r.reported?"Votes reported":r.race?"Listed, no votes":r.roster?(r.roster.kind==="filing"?"FEC filing; ballot unverified":"Official candidates; votes pending"):r.feed?"Not in feed":"Source unavailable"}</td><td>{nfmt(r.race?.total)}</td><td>{r.insight.sourceCalledWinner?"Source called: "+clean(r.insight.sourceCalledWinner):r.insight.leader?clean(r.insight.leader.n)+" ("+partyLabel(r.insight.leader.p)+")":"—"}</td><td>{r.insight.voteMargin!==null?nfmt(r.insight.voteMargin)+" votes"+(r.insight.marginPct!==null?" / "+r.insight.marginPct.toFixed(2)+"%":""):"—"}</td><td>{typeof r.race?.pct_in==="number"&&r.race.pct_in>=0&&r.race.pct_in<=100?r.race.pct_in+"%":"—"}</td></tr>)}</tbody></table></div>{filtered.length>250&&<p className="muted">Showing the first 250 matching contests. Narrow the state or search to see other races.</p>}</section></>}
+    <section className="results"><div className="sectionheading"><div><h2>Race explorer</h2><p>Filter by House, Senate, governor, state, district, or candidate.</p></div><span>{filtered.length} contests</span></div><div className="filters"><label>Chamber<select value={office} onChange={e=>setOffice(e.target.value as "Both"|Office)}><option>Both</option><option>House</option><option>Senate</option><option>Governor</option></select></label><label>State<select value={state} onChange={e=>setState(e.target.value)}><option>All</option>{states.map(s=><option key={s}>{s}</option>)}</select></label><label>Search<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="e.g. TX-23 or candidate" /></label></div><div className="tablewrap"><table><thead><tr><th>Contest</th><th>Chamber</th><th>State</th><th>Coverage</th><th>Votes</th><th>Leading / source-called</th><th>Margin</th><th>Precincts</th></tr></thead><tbody>{filtered.slice(0,250).map(r=><tr key={r.office+r.key}><td><strong>{r.key}</strong>{r.candidates.length>0&&<details><summary>{r.candidates.length} candidates</summary>{r.candidates.map((c,i)=><div className="candidate-details" key={i}><span className={"party-badge "+partyClass(c.p)} title={partyLabel(c.p)}>{partyCode(c.p)}</span><span>{clean(c.n)} <span className="party-caption">({partyLabel(c.p)})</span></span><span className="candidate-votes">{nfmt(c.v)} votes</span></div>)}</details>}</td><td>{r.office}</td><td>{r.state}</td><td>{r.reported?"Votes reported":r.race?"Listed, no votes":r.roster?(r.roster.kind==="filing"?"FEC filing; ballot unverified":"Official candidates; votes pending"):r.feed?"Not in feed":"Source unavailable"}</td><td>{nfmt(r.race?.total)}</td><td>{r.insight.sourceCalledWinner?"Source called: "+clean(r.insight.sourceCalledWinner):r.insight.leader?clean(r.insight.leader.n)+" ("+partyLabel(r.insight.leader.p)+")":"—"}</td><td>{r.insight.voteMargin!==null?nfmt(r.insight.voteMargin)+" votes"+(r.insight.marginPct!==null?" / "+r.insight.marginPct.toFixed(2)+"%":""):"—"}</td><td>{typeof r.race?.pct_in==="number"&&r.race.pct_in>=0&&r.race.pct_in<=100?r.race.pct_in+"%":"—"}</td></tr>)}</tbody></table></div>{filtered.length>250&&<p className="muted">Showing the first 250 matching contests. Narrow the state or search to see other races.</p>}</section></>}
     {country==="US"&&year===2026&&closeAlert&&closeContests.length>0&&<aside className="close-alert" role="dialog" aria-modal="false" aria-label="Close election alerts">
       <div className="close-header"><h3>Close reported contests · {closeContests.length}</h3><button type="button" aria-label="Dismiss close race alert" onClick={()=>setCloseAlert(false)}>✕</button></div>
       <p>Vote margins are calculated from published counts. These are not predictions or final outcomes.</p>
