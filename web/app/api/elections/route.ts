@@ -10,7 +10,7 @@ const MAX_BYTES = 4_000_000;
 export async function GET(request: NextRequest) {
   const year = request.nextUrl.searchParams.get("year");
   const office = request.nextUrl.searchParams.get("office");
-  if (!["2024", "2026"].includes(year ?? "") || !["House", "Senate"].includes(office ?? "")) {
+  if (!["2024", "2026"].includes(year ?? "") || !["House", "Senate", "Governor"].includes(office ?? "")) {
     return NextResponse.json({ error: "Invalid election year or office" }, { status: 400 });
   }
   const url = new URL(SOURCE);
