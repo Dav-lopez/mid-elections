@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import "./dashboard.css";
 import { officialRosters } from "../lib/official-rosters";
 import UsMap from "../components/us-map";
-import { partyCode, partyLabel, raceInsight, sourceCalledParty } from "../lib/race-insights";
+import { partyCode, partyLabel, raceInsight, sourceCalledParty, providerSeatKey } from "../lib/race-insights";
 
 type Candidate = { n?: string; p?: string; v?: number | null; pct?: number | null };
 type Race = { cands?: Candidate[]; total?: number | null; pct_in?: number | null; leader?: string | null; winner?: string | null; called?: boolean };
@@ -148,7 +148,7 @@ export default function Home(){
       const f=feeds[s.office]?.year===year?feeds[s.office]:undefined;
       const web=year===2026?webContests[s.office+":"+s.key]:undefined;
       // The published Senate-special feed key is "FL-special" / "OH-special".
-      const publishedKey=s.office==="Senate"?s.key.replace(/-SPECIAL$/,"-special"):s.key;
+      const publishedKey=providerSeatKey(s.office,s.key);
       const race:Race|null=f?.races?.[s.key]??f?.races?.[publishedKey]??(web?{
         cands:web.cands,total:web.total,pct_in:web.pct_in,called:false,winner:""
       }:null);
