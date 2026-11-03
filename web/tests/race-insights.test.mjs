@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { partyCode, partyLabel, raceInsight, sourceCalledParty } from "../lib/race-insights.ts";
+import { partyCode, partyLabel, raceInsight, sourceCalledParty, providerSeatKey } from "../lib/race-insights.ts";
 
 test("party names and abbreviations are displayed consistently", () => {
   assert.equal(partyCode("DEM"), "D");
@@ -64,4 +64,12 @@ test("a publisher-called seat gets a party only with an exact reported candidate
   assert.equal(sourceCalledParty({...race,winner:"Unlisted Name"}),null);
   assert.equal(sourceCalledParty({...race,called:false}),null);
   assert.equal(sourceCalledParty({...race,total:0,cands:[{n:"Candidate A",p:"D",v:0}]}),null);
+});
+
+test("the 2026 Senate special keys match the published feed's lower-case suffix",()=>{
+  assert.equal(providerSeatKey("Senate","FL-SPECIAL"),"FL-special");
+  assert.equal(providerSeatKey("Senate","OH-SPECIAL"),"OH-special");
+  assert.equal(providerSeatKey("Senate","GA"),"GA");
+  assert.equal(providerSeatKey("House","TX-23"),"TX-23");
+  assert.equal(providerSeatKey("Governor","IN"),"IN");
 });
