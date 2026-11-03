@@ -11,6 +11,8 @@ type Feed = { api: number; year: number; office: string; live: boolean; stale: b
 type Office = "House" | "Senate";
 type CandidateSource = { authority: string; status: string; url: string };
 type DynamicRoster = { authority: string; sourceUrl: string; kind: "ballot" | "filing"; candidates: {n:string;p:string}[] };
+type WebContest = { seat:string; cands:Candidate[]; total:number|null; pct_in:number|null; called:false; winner:""; sourceUrl:string; updatedLabel:string|null };
+type WebSourceStatus = {authority:string;url:string;status:string;details:string};
 const API = "/api/elections";
 const states = "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split(" ");
 const house: Record<string,number> = {AL:7,AK:1,AZ:9,AR:4,CA:52,CO:8,CT:5,DE:1,FL:28,GA:14,HI:2,ID:2,IL:17,IN:9,IA:4,KS:4,KY:6,LA:6,ME:2,MD:8,MA:9,MI:13,MN:8,MS:4,MO:8,MT:2,NE:3,NV:4,NH:2,NJ:12,NM:3,NY:26,NC:14,ND:1,OH:15,OK:5,OR:6,PA:17,RI:2,SC:7,SD:1,TN:9,TX:38,UT:4,VT:1,VA:11,WA:10,WV:2,WI:8,WY:1};
@@ -39,6 +41,11 @@ export default function Home(){
   const [candidateSources,setCandidateSources]=useState<CandidateSource[]>([]);
   const [candidateError,setCandidateError]=useState("");
   const [candidatesChecked,setCandidatesChecked]=useState<string|null>(null);
+  const [webContests,setWebContests]=useState<Record<string,WebContest>>({});
+  const [webSource,setWebSource]=useState<WebSourceStatus|null>(null);
+  const [webSourceChecked,setWebSourceChecked]=useState<string|null>(null);
+  const [webSourceError,setWebSourceError]=useState("");
+  const [webSourceStale,setWebSourceStale]=useState(false);
   useEffect(()=>{
     if(country!=="US"){setFeeds({});setErrors({});setBusy(false);return;}
     let cancelled=false;
@@ -100,11 +107,58 @@ export default function Home(){
     const timer=setInterval(()=>void check(),60*60*1000);
     return ()=>{cancelled=true;clearInterval(timer);};
   },[year,country]);
+  // Separate official webpage ingestion from provider JSON and federal filings.
+  // These pages contain verified ballot names even while vote totals say "NR".
+  useEffect(()=>{
+    if(country!=="US"||year!==2026)return;
+    let cancelled=false;
+    let checking=false;
+    const get=async()=>{
+      if(cancelled||checking)return;
+      checking=true;
+      try{
+        const response=await fetch("/api/official-web",{cache:"no-store"});
+        if(!response.ok)throw new Error("HTTP "+response.status);
+        const payload:unknown=await response.json();
+        if(!payload||typeof payload!=="object")throw new Error("Invalid official web response");
+        const parsed=payload as {contests?:Record<string,WebContest>;sources?:WebSourceStatus;stale?:boolean;fetchedAt?:string};
+        if(!parsed.contests||typeof parsed.contests!=="object")throw new Error("No web race data");
+        if(!cancelled){
+          setWebContests(parsed.contests);
+          setWebSource(parsed.sources??null);
+          setWebSourceChecked(parsed.fetchedAt??new Date().toISOString());
+          setWebSourceStale(parsed.stale===true);
+          setWebSourceError("");
+        }
+      }catch(error){
+        if(!cancelled){setWebSourceError(error instanceof Error?error.message:"Web source request failed");setWebSourceStale(true);}
+      }finally{checking=false;}
+    };
+    void get();
+    // State website is checked at most every three minutes, never every five seconds.
+    const timer=setInterval(()=>{if(document.visibilityState==="visible")void get();},180000);
+    return ()=>{cancelled=true;clearInterval(timer);};
+  },[country,year]);
   const rows=useMemo(()=>{
     if(country!=="US")return [];
     const registry=year===2026?seats:[...new Set([...Object.values(feeds).flatMap(f=>f&&f.year===year?Object.entries(f.races).map(([key])=>({office:f.office as Office,state:key.slice(0,2),key})):[])])];
-    return registry.map(s=>{const f=feeds[s.office]?.year===year?feeds[s.office]:undefined;const race=f?.races?.[s.key]??null;const feedCandidates=Array.isArray(race?.cands)?race.cands.filter(c=>c&&typeof c.n==="string"):[];const remote=year===2026?externalRosters[s.office+":"+s.key]:undefined;const manual=year===2026?officialRosters[s.office+":"+s.key]:undefined;const roster=remote?.kind==="ballot"?remote:manual?{...manual,kind:"ballot" as const}:remote;const candidates=feedCandidates.length?feedCandidates:(roster?.candidates.map(c=>({...c,v:null,pct:null}))??[]);const reported=validVotes(race?.total)&&race.total>0||candidates.some(c=>validVotes(c.v)&&c.v>0);const insight=raceInsight(race);return {...s,race,candidates,reported,roster,feed:f,insight};});
-  },[country,year,feeds,externalRosters]);
+    return registry.map(s=>{
+      const f=feeds[s.office]?.year===year?feeds[s.office]:undefined;
+      const web=year===2026?webContests[s.office+":"+s.key]:undefined;
+      const race:Race|null=f?.races?.[s.key]??(web?{
+        cands:web.cands,total:web.total,pct_in:web.pct_in,called:false,winner:""
+      }:null);
+      const feedCandidates=Array.isArray(race?.cands)?race.cands.filter(c=>c&&typeof c.n==="string"):[];
+      const remote=year===2026?externalRosters[s.office+":"+s.key]:undefined;
+      const manual=year===2026?officialRosters[s.office+":"+s.key]:undefined;
+      const webRoster=web?{authority:"Maryland State Board of Elections",sourceUrl:web.sourceUrl,kind:"ballot" as const,candidates:web.cands.map(c=>({n:c.n??"",p:c.p??""}))}:undefined;
+      const roster=webRoster??(remote?.kind==="ballot"?remote:manual?{...manual,kind:"ballot" as const}:remote);
+      const candidates=feedCandidates.length?feedCandidates:(roster?.candidates.map(c=>({...c,v:null,pct:null}))??[]);
+      const reported=validVotes(race?.total)&&race.total>0||candidates.some(c=>validVotes(c.v)&&c.v>0);
+      const insight=raceInsight(race);
+      return {...s,race,candidates,reported,roster,feed:f,insight,webSourceUrl:web?.sourceUrl,webUpdated:web?.updatedLabel};
+    });
+  },[country,year,feeds,externalRosters,webContests]);
   const filtered=rows.filter(r=>(office==="Both"||r.office===office)&&(state==="All"||r.state===state)&&(!search||r.key.toLowerCase().includes(search.toLowerCase())||r.candidates.some(c=>clean(c.n).toLowerCase().includes(search.toLowerCase()))));
   const listed=rows.filter(r=>r.race).length,reported=rows.filter(r=>r.reported).length;
   const live=Object.values(feeds).some(f=>f?.year===year&&f.live);
@@ -120,7 +174,7 @@ export default function Home(){
     seenCloseRaces.current=closeSignature;
   },[closeSignature]);
   const chooseRace=(r:{office:Office;state:string})=>{setOffice(r.office);setState(r.state);setSearch("");setCloseAlert(false);};
-  const featuredKeys = ["IA", "OH-SPECIAL", "KS", "NC", "TX", "GA", "FL-SPECIAL", "MI"];
+  const featuredKeys = ["IA", "OH-SPECIAL", "MD-01", "MD-08", "KS", "NC", "TX", "GA", "FL-SPECIAL", "MI"];
   const featured = (year === 2026 && state === "All" && !search
     ? [...new Set([...closeContests.slice(0,6).map(r=>r.key),...calledContests.slice(0,6).map(r=>r.key),...featuredKeys])]
       .flatMap(key=>rows.filter(r=>r.key===key && (office==="Both"||office===r.office)))
@@ -153,6 +207,13 @@ export default function Home(){
       <p>Candidate-source contests: {rows.filter(r=>r.roster).length}. Data checked: {candidatesChecked?new Date(candidatesChecked).toLocaleString():"Pending"}.</p>
       {candidateSources.map(source=><p key={source.authority}><a href={source.url} target="_blank" rel="noreferrer">{source.authority}</a>: {source.status==="available"?"Source loaded":"Source unavailable — retained local rosters remain visible"}</p>)}
       {candidateError&&<p className="warning">Candidate-source warning: {candidateError}</p>}
+      <p>Official webpages: {webSource?<>
+        <a href={webSource.url} target="_blank" rel="noreferrer">{webSource.authority}</a>
+        {" · "}{webSource.details}{" · "}
+        {webSourceStale?"Last successful webpage snapshot is stale":webSource.status}
+      </>:"Checking Maryland state results pages…"}
+      {webSourceChecked?" · Checked "+new Date(webSourceChecked).toLocaleString():""}</p>
+      {webSourceError&&<p className="warning">Official webpage source warning: {webSourceError}</p>}
     </section>}
     <section className="insights-board" aria-label="Reported election leaders, close races, and source calls">
       <div className="insight-panel">
@@ -201,7 +262,7 @@ export default function Home(){
             </div>)}
           </div> : <p className="empty-candidates">Candidate breakdown not yet published by this results source.</p>}
           {r.candidates.length>3&&<span className="party-caption">+ {r.candidates.length-3} additional candidate(s) · see race explorer</span>}
-          {r.roster&&!r.race&&<a className="roster-source" target="_blank" rel="noreferrer" href={r.roster.sourceUrl}>{r.roster.kind==="filing"?"FEC registrations (not verified ballot)":"Official candidate list"} · {r.roster.authority}</a>}
+          {r.roster&&(!r.race||r.webSourceUrl)&&<a className="roster-source" target="_blank" rel="noreferrer" href={r.roster.sourceUrl}>{r.roster.kind==="filing"?"FEC registrations (not verified ballot)":"Official candidate list"} · {r.roster.authority}{r.webUpdated?" · "+r.webUpdated:""}</a>}
           <div className="race-card-foot"><span>{r.reported?nfmt(r.race?.total)+" votes":"No reported votes"}</span><span>{typeof r.race?.pct_in==="number"&&r.race.pct_in>=0&&r.race.pct_in<=100?r.race.pct_in+"% precincts":"Precincts —"}</span></div>
         </article>):<div className="no-races">No races match these filters. Choose another chamber or state.</div>}
       </div>
