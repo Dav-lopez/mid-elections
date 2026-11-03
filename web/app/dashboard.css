@@ -109,3 +109,9 @@
 .map-mode button:focus-visible{outline:3px solid #f1ab36;outline-offset:2px}
 .map-panel .map-legend{margin-top:12px}
 .map-panel .map-legend .legend-swatch{flex:0 0 14px}
+
+/* Results publication status: distinct source check from actual vote totals. */
+.source-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:10px;margin:13px 0}
+.source-item{display:flex;flex-direction:column;gap:5px;border:1px solid #c6d9e8;background:#fff;border-radius:10px;padding:13px;font-size:12px;color:#50647b}
+.source-item strong{font-size:15px;color:#14233b}
+.source-item span:last-child{font-size:11px}
