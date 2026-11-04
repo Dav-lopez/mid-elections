@@ -35,7 +35,9 @@ function strip(s: string) { return s.replace(/\s+/g, " ").trim(); }
 function extractWinner(prefix: string): string | null {
   // Named winner appears before 'defeats'. Limit extraction to personal names;
   // never infer a winner from a "leading", "ahead", or "projected" sentence.
-  const subject = prefix.split(",")[0].trim();
+  const subject = prefix.split(",")[0].trim()
+    .replace(/^(?:Democratic|Democrat|Republican|GOP|Independent)\s+/i, "")
+    .replace(/^(?:(?:former|incumbent|state)\s+)*(?:(?:Sen\.|Rep\.|Gov\.|Dr\.)\s+)?/i, "");
   const match = subject.match(/([A-Z][\p{L}'’-]+(?:\s+[A-Z][\p{L}'’-]+){1,3})$/u);
   if (!match) return null;
   const value = strip(match[1]);

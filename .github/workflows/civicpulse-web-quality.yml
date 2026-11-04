@@ -31,6 +31,8 @@ jobs:
         run: node scripts/probe-civicapi.mjs
       - name: Probe public election-night HTML (non-blocking)
         run: node scripts/probe-poliwave.mjs
+      - name: Check AP-attributed newsroom source (non-blocking)
+        run: node --experimental-strip-types scripts/probe-newsroom.mjs
       - name: Reported-result regression tests
         run: node --experimental-strip-types --test tests/*.test.mjs
       - name: TypeScript verification
