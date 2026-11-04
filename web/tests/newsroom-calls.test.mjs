@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { parseRollCall } from "../lib/newsroom-calls.ts";
 
-const fixture = \`<html><body><article>
+const fixture = `<html><body><article>
 <h1>Key midterm election results</h1>
 <p>CQ Roll Call is tracking the results in these battleground races, as they are called by The Associated Press.</p>
 <p>Last updated at 9:02 p.m. Eastern time</p>
@@ -16,7 +16,7 @@ const fixture = \`<html><body><article>
 <li>Florida Governor: Byron Donalds leads another candidate with 51% of reported votes [Republican hold]</li>
 <li>Ohio Governor: Amy Acton is projected to lead with 59 percent [Democratic flip]</li>
 </ul>
-</article></body></html>\`;
+</article></body></html>`;
 
 test("extract calls, parties, districts and publication time from named AP-attributed results", () => {
   const parsed = parseRollCall(fixture);
