@@ -30,6 +30,7 @@ test("extract calls, parties, districts and publication time from named AP-attri
   assert.equal(pick("Florida","House").district,"25");
   assert.equal(pick("Florida","House").winner,"Jared Moskowitz");
   assert.equal(pick("North Carolina","House").district,"11");
+  assert.equal(pick("North Carolina","House").winner,"Jamie Ager");
   assert.equal(parsed.calls.some(c=>c.office==="Governor"),false);
 });
 
