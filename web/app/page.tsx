@@ -54,6 +54,7 @@ export default function Home(){
   const [webSourceError,setWebSourceError]=useState("");
   const [webSourceStale,setWebSourceStale]=useState(false);
   const [nightTab,setNightTab]=useState<NightOffice>("Senate");
+  const [showAllCalls,setShowAllCalls]=useState(false);
   const [night,setNight]=useState<NightResult|null>(null);
   const [nightError,setNightError]=useState("");
   const [nightChecked,setNightChecked]=useState<string|null>(null);
@@ -250,7 +251,10 @@ export default function Home(){
   })) as Record<string,{name:string;party:string;seat:string;votes:number}>;
   const senateStatesReporting=Object.keys(senateLeadByState).length;
   const nightTotals=night?.offices?.[nightTab]??null;
-  const nightCalls=night?.calls.filter(c=>c.office===nightTab&&(state==="All"||stateNamesByCode[state]===c.state))??[];
+  const trackedOfficeCalls=night?.calls.filter(c=>c.office===nightTab)??[];
+  const trackedDem=trackedOfficeCalls.filter(c=>partyCode(c.party)==="D").length;
+  const trackedRep=trackedOfficeCalls.filter(c=>partyCode(c.party)==="R").length;
+  const nightCalls=trackedOfficeCalls.filter(c=>state==="All"||stateNamesByCode[state]===c.state);
   const nightProgress=nightTotals?Math.max(0,Math.min(100,(nightTotals.dem+nightTotals.rep+(nightTotals.independent??0))/nightTotals.seats*100)):0;
   const senateWinners=Object.fromEntries((night?.calls??[]).filter(c=>c.office==="Senate").flatMap(c=>{
     const code=Object.keys(stateNamesByCode).find(k=>stateNamesByCode[k]===c.state);
@@ -278,12 +282,24 @@ export default function Home(){
         <div className="rep-fill" style={{width:nightTotals.rep/nightTotals.seats*100+"%"}}/>
       </div>
       <div className="night-summary-foot"><span>{nightTotals.demLeading} more D-leading</span><span>{nightTotals.independent?"Independent: "+nightTotals.independent+" · ":""}{Math.round(nightProgress)}% seats assigned or not up</span><span>{nightTotals.repLeading} more R-leading</span></div></>:
-        <div className="night-alert">National seat totals are not available from the connected sources. The winner cards below are a verified, partial list, not the complete election result. No zeroes, polls or projections are substituted. See the linked AP-powered live results for the nationwide balance.</div>}
+        <div className="night-partial">
+          <div className="night-summary" aria-label="Verified winner calls in connected sources, not nationwide seat totals">
+            <div className="side dem"><span className="count">{trackedDem}</span><span className="side-label">D calls tracked</span></div>
+            <div className="center"><strong>{trackedOfficeCalls.length}</strong><span>named source calls<br/>partial coverage</span></div>
+            <div className="side rep"><span className="count">{trackedRep}</span><span className="side-label">R calls tracked</span></div>
+          </div>
+          {trackedOfficeCalls.length>0&&<div className="night-bar" role="img" aria-label={trackedDem+" Democratic and "+trackedRep+" Republican named calls in this partial source"}>
+            <div className="dem-fill" style={{width:trackedDem/trackedOfficeCalls.length*100+"%"}}/>
+            <div className="unfilled"/>
+            <div className="rep-fill" style={{width:trackedRep/trackedOfficeCalls.length*100+"%"}}/>
+          </div>}
+          <p className="night-alert">These counts cover <strong>only the races named by the currently connected reporting source</strong>. They are not the national Senate, House, or governor balance, and cannot establish chamber control. No missing seat is counted as zero. <a href="https://www.theguardian.com/us-news/ng-interactive/2026/nov/03/midterm-elections-full-results-senate-house-governor-races" target="_blank" rel="noreferrer">View nationwide AP-powered results</a>.</p>
+        </div>}
       <p className="night-source">Source: <a href={night?.sourceUrl??"https://www.poliwave.com/us/live/midterms-2026"} target="_blank" rel="noreferrer">{night?.source??"Independent election-night results"}</a> · {night?.sourceUpdated??"Source check pending"} · {night?.stale?"Delayed / not synchronized live":"Source snapshot"}{nightChecked?" · Checked "+new Date(nightChecked).toLocaleTimeString():""}.</p>
       {nightError&&<p className="warning">Winner-source connection: {nightError}</p>}
       {night?.sourceUnavailable&&<p className="warning">Live automated winner feed is unavailable. The names below are dated, independently reported calls—not a continuously updated AP feed.</p>}
       <div className="night-winners">
-        {nightCalls.slice(0,10).map((call,i)=><div className="night-winner" key={call.state+call.office+call.winner+i}>
+        {nightCalls.slice(0,showAllCalls?nightCalls.length:8).map((call,i)=><div className="night-winner" key={call.state+call.office+call.winner+i}>
           <small>{call.state} · {call.office}{call.district?" · District "+Number(call.district):""}</small>
           <span className="candidate-party"><span className={"party-badge "+partyClass(call.party)}>{partyCode(call.party)}</span><strong>{call.winner}</strong></span>
           <span className="night-status">SOURCE-CALLED · NOT CERTIFIED</span>
@@ -291,6 +307,7 @@ export default function Home(){
         </div>)}
         {nightCalls.length===0&&<p className="muted">No named calls available for this office and state from the connected sources. <a target="_blank" rel="noreferrer" href="https://www.theguardian.com/us-news/ng-interactive/2026/nov/03/midterm-elections-full-results-senate-house-governor-races">Review the live AP-powered results</a>.</p>}
       </div>
+      {nightCalls.length>8&&<button className="show-more-calls" type="button" onClick={()=>setShowAllCalls(x=>!x)} aria-expanded={showAllCalls}>{showAllCalls?"Show fewer": "Show all "+nightCalls.length+" attributed calls"}</button>}
     </section>}
     <section className="metrics"><article><span>Tracked contests</span><strong>{rows.length.toLocaleString()}</strong></article><article><span>Listed by provider</span><strong>{listed.toLocaleString()}</strong></article><article><span>Contests with votes</span><strong>{reported.toLocaleString()}</strong></article><article><span>Feed status</span><strong className="feed-status-value">{feedStatus}</strong></article></section>
     <section className="notice"><strong>{year===2024?"Historical 2024 vote totals — not 2026 results.":"2026 general election · November 3, 2026"}</strong><p>Counts are displayed only when published by the source. Missing results are not zero. Precinct completion does not mean certification. A vote leader is not necessarily a winner.</p><p>Source: <a href="https://openamerica.io/elections/api/" target="_blank" rel="noreferrer">Open America election API, relaying state election-office counts</a>. Publisher timestamp: {Object.values(feeds).filter(f=>f?.year===year&&f.as_of).map(f=>f?.office+": "+new Date(f!.as_of!).toLocaleString()).join(" · ")||"Not published"}. Last checked: {checked?new Date(checked).toLocaleString():"Not checked"}.</p>{Object.entries(errors).map(([o,error])=><p className="warning" key={o}>{o}: source unavailable ({error}). Previously retrieved data may be stale.</p>)}</section>
