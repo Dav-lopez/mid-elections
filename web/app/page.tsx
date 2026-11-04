@@ -167,7 +167,19 @@ export default function Home(){
   },[country,year,feeds,externalRosters,webContests]);
   const filtered=rows.filter(r=>(office==="Both"||r.office===office)&&(state==="All"||r.state===state)&&(!search||r.key.toLowerCase().includes(search.toLowerCase())||r.candidates.some(c=>clean(c.n).toLowerCase().includes(search.toLowerCase()))));
   const listed=rows.filter(r=>r.race).length,reported=rows.filter(r=>r.reported).length;
-  const live=Object.values(feeds).some(f=>f?.year===year&&f.live);
+  const currentFeeds=Object.values(feeds).filter((f):f is Feed=>Boolean(f&&f.year===year));
+  const live=currentFeeds.some(f=>f.live);
+  const counting=currentFeeds.some(f=>f.counting);
+  const stale=currentFeeds.some(f=>f.stale);
+  const allFinal=currentFeeds.length>0&&currentFeeds.every(f=>f.final);
+  const hasSourceErrors=Object.values(errors).some(Boolean);
+  // Election Day is not the same as an active vote feed. Show both truthfully.
+  const feedStatus=country!=="US"?"No connected results source":year===2024?"Historical results archive":
+    live?"Live votes reporting":stale&&counting?"Votes published · delayed feed":
+    allFinal&&counting?"Reported precincts complete":
+    counting?"Votes published · updating":
+    currentFeeds.length===0?(busy?"Connecting to results feed":"Results feed unavailable"):
+    "Awaiting first published votes";
   const reportingSources=(["House","Senate","Governor"] as Office[]).map(o=>{
     const feed=feeds[o]?.year===year?feeds[o]:undefined;
     const raceCount=feed?Object.keys(feed.races).length:0;
@@ -207,14 +219,16 @@ export default function Home(){
   const senateStatesReporting=Object.keys(senateLeadByState).length;
   const dataPublished = reported>0;
   return <main className="dashboard">
-    <header className="hero"><div className="eyebrow">CIVICPULSE · SOURCE-AWARE ELECTION INFORMATION</div><h1>Election Results Dashboard</h1><p>Official-source reporting where available. No forecasts, invented totals, or inferred winners.</p><div className="topline"><span>{country==="US"?"United States":"Nigeria"}</span><span>{country==="US"?year:2027} election coverage</span><span>{live?"● Live counting":"● Not live"}</span></div></header>
+    <header className="hero"><div className="eyebrow">CIVICPULSE · SOURCE-AWARE ELECTION INFORMATION</div><h1>Election Results Dashboard</h1><p>Official-source reporting where available. No forecasts, invented totals, or inferred winners.</p><div className="topline"><span>{country==="US"?"United States":"Nigeria"}</span><span>{country==="US"?year:2027} election coverage</span><span>{feedStatus}</span></div></header>
     <div className="controls"><label>Country<select value={country} onChange={e=>{setCountry(e.target.value as "US"|"NG");setState("All")}}><option value="US">United States</option><option value="NG">Nigeria</option></select></label><label>Election<select value={country==="US"?year:2027} disabled={country==="NG"} onChange={e=>setYear(Number(e.target.value))}><option value={2026}>2026 Congressional</option><option value={2024}>2024 Historical replay</option></select></label><button onClick={()=>setRefresh(v=>v+1)} disabled={busy||country!=="US"}>{busy?"Checking source…":"Refresh source"}</button></div>
     {country==="US"&&<div className="refresh-status" role="status"><i className="dot" aria-hidden="true"/> Auto-check every 5 seconds while this tab is visible · Provider snapshot refresh is cached for 30 seconds · Last check: {checked?new Date(checked).toLocaleTimeString():"Pending"}{busy?" · Fetching…":""}</div>}
     {country==="NG"?<section className="notice"><h2>Nigeria 2027 · Integration pending</h2><p>INEC-backed election feeds and validated candidate rosters are not connected yet. No Nigerian vote totals are displayed.</p></section>:<>
-    <section className="metrics"><article><span>Tracked contests</span><strong>{rows.length.toLocaleString()}</strong></article><article><span>Listed by provider</span><strong>{listed.toLocaleString()}</strong></article><article><span>Contests with votes</span><strong>{reported.toLocaleString()}</strong></article><article><span>Feed status</span><strong>{live?"Live":Object.values(feeds).some(f=>f?.stale)?"Stale":"Not live"}</strong></article></section>
+    <section className="metrics"><article><span>Tracked contests</span><strong>{rows.length.toLocaleString()}</strong></article><article><span>Listed by provider</span><strong>{listed.toLocaleString()}</strong></article><article><span>Contests with votes</span><strong>{reported.toLocaleString()}</strong></article><article><span>Feed status</span><strong className="feed-status-value">{feedStatus}</strong></article></section>
     <section className="notice"><strong>{year===2024?"Historical 2024 vote totals — not 2026 results.":"2026 general election · November 3, 2026"}</strong><p>Counts are displayed only when published by the source. Missing results are not zero. Precinct completion does not mean certification. A vote leader is not necessarily a winner.</p><p>Source: <a href="https://openamerica.io/elections/api/" target="_blank" rel="noreferrer">Open America election API, relaying state election-office counts</a>. Publisher timestamp: {Object.values(feeds).filter(f=>f?.year===year&&f.as_of).map(f=>f?.office+": "+new Date(f!.as_of!).toLocaleString()).join(" · ")||"Not published"}. Last checked: {checked?new Date(checked).toLocaleString():"Not checked"}.</p>{Object.entries(errors).map(([o,error])=><p className="warning" key={o}>{o}: source unavailable ({error}). Previously retrieved data may be stale.</p>)}</section>
     <section className="notice" aria-label="Results provider reporting status">
       <strong>Connected results-feed status by office</strong>
+      <p className="feed-clarification">{counting?"Published votes are available for at least one connected race.":hasSourceErrors&&currentFeeds.length===0?"The upstream results feed could not be loaded; check the errors below.":"Voting may be underway, but the connected source has not yet published vote totals. The first U.S. poll closures begin at 5 p.m. Central; results can take additional time to arrive."} The dashboard checks every five seconds; the provider may update and cache only every 30–60 seconds.</p>
+      <p className="muted">To inspect the raw response directly: <a href="/api/elections?year=2026&office=House" target="_blank" rel="noreferrer">House results JSON</a> · <a href="/api/elections?year=2026&office=Senate" target="_blank" rel="noreferrer">Senate results JSON</a> · <a href="/api/elections?year=2026&office=Governor" target="_blank" rel="noreferrer">Governor results JSON</a>.</p>
       <p>Provider coverage is partial (22 states). A successful check with zero races means the provider has not yet published matching returns; it does not mean zero votes. Reported totals update only when upstream state results change.</p>
       {state!=="All"&&!supportedResultsStates.has(state)&&!Boolean(Object.keys(webContests).some(key=>key.startsWith("House:"+state+"-")))&&<p className="warning">{state} is outside this provider's 22-state automated results coverage. Candidates may still be listed from government filings; this is not an indication that no one has voted.</p>}
       <div className="source-grid">{reportingSources.map(source=><div key={source.office} className="source-item">
@@ -267,7 +281,7 @@ export default function Home(){
       </div>
     </section>
     <section className="live-board" aria-label="Election race cards and state map">
-      <div className="sectionheading"><div><span className="section-kicker">ELECTION NIGHT BOARD</span><h2>{year===2024?"2024 published results":"2026 midterm elections"}</h2><p>{year===2024?"Historical state-published totals, not a 2026 forecast":"November 3, 2026 · official vote counts appear as they are published"}</p></div><span className={live?"live-tag counting":"live-tag"}>{live?"● LIVE COUNTING":dataPublished?"● PUBLISHED COUNTS":"○ AWAITING RETURNS"}</span></div>
+      <div className="sectionheading"><div><span className="section-kicker">ELECTION NIGHT BOARD</span><h2>{year===2024?"2024 published results":"2026 midterm elections"}</h2><p>{year===2024?"Historical state-published totals, not a 2026 forecast":"November 3, 2026 · official vote counts appear as they are published"}</p></div><span className={live?"live-tag counting":"live-tag"}>{feedStatus.toUpperCase()}</span></div>
       <div className="chamber-tabs" role="group" aria-label="Filter by chamber">
         {(["Senate","House","Governor","Both"] as const).map(o=><button key={o} type="button" aria-pressed={office===o} className={office===o?"selected":""} onClick={()=>setOffice(o)}>{o==="Both"?"All contests":o}</button>)}
         <span className="tab-note">Governor results appear where the connected provider publishes them.</span>
