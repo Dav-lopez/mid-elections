@@ -15,7 +15,7 @@ type WebContest = { seat:string; cands:Candidate[]; total:number|null; pct_in:nu
 type WebSourceStatus = {authority:string;url:string;status:string;details:string};
 type NightOffice = "Senate"|"House"|"Governor";
 type NightTotal = {office:NightOffice;seats:number;called:number;dem:number;rep:number;independent?:number;demLeading:number;repLeading:number};
-type NightCall = {office:NightOffice;state:string;winner:string;party:string;sourceUrl:string;sourceLabel?:string};
+type NightCall = {office:NightOffice;state:string;district?:string;winner:string;party:string;sourceUrl:string;sourceLabel?:string};
 type NightResult = {source:string;sourceUrl:string;sourceUpdated:string;stale:boolean;sourceUnavailable?:boolean;headline:string;offices:Record<NightOffice,NightTotal>|null;calls:NightCall[]};
 const API = "/api/elections";
 const stateNamesByCode:Record<string,string> = { AL:"Alabama",AK:"Alaska",AZ:"Arizona",AR:"Arkansas",CA:"California",CO:"Colorado",CT:"Connecticut",DE:"Delaware",FL:"Florida",GA:"Georgia",HI:"Hawaii",ID:"Idaho",IL:"Illinois",IN:"Indiana",IA:"Iowa",KS:"Kansas",KY:"Kentucky",LA:"Louisiana",ME:"Maine",MD:"Maryland",MA:"Massachusetts",MI:"Michigan",MN:"Minnesota",MS:"Mississippi",MO:"Missouri",MT:"Montana",NE:"Nebraska",NV:"Nevada",NH:"New Hampshire",NJ:"New Jersey",NM:"New Mexico",NY:"New York",NC:"North Carolina",ND:"North Dakota",OH:"Ohio",OK:"Oklahoma",OR:"Oregon",PA:"Pennsylvania",RI:"Rhode Island",SC:"South Carolina",SD:"South Dakota",TN:"Tennessee",TX:"Texas",UT:"Utah",VT:"Vermont",VA:"Virginia",WA:"Washington",WV:"West Virginia",WI:"Wisconsin",WY:"Wyoming"};
@@ -262,8 +262,8 @@ export default function Home(){
     <div className="controls"><label>Country<select value={country} onChange={e=>{setCountry(e.target.value as "US"|"NG");setState("All")}}><option value="US">United States</option><option value="NG">Nigeria</option></select></label><label>Election<select value={country==="US"?year:2027} disabled={country==="NG"} onChange={e=>setYear(Number(e.target.value))}><option value={2026}>2026 Congressional</option><option value={2024}>2024 Historical replay</option></select></label><button onClick={()=>setRefresh(v=>v+1)} disabled={busy||country!=="US"}>{busy?"Checking source…":"Refresh source"}</button></div>
     {country==="US"&&<div className="refresh-status" role="status"><i className="dot" aria-hidden="true"/> Auto-check every 5 seconds while this tab is visible · Provider snapshot refresh is cached for 30 seconds · Last check: {checked?new Date(checked).toLocaleTimeString():"Pending"}{busy?" · Fetching…":""}</div>}
     {country==="NG"?<section className="notice"><h2>Nigeria 2027 · Integration pending</h2><p>INEC-backed election feeds and validated candidate rosters are not connected yet. No Nigerian vote totals are displayed.</p></section>:<>
-    {year===2026&&<section className="night-balance" aria-label="Live election night seat balance and declared winners">
-      <div className="night-balance-heading"><div><h2>2026 election night</h2><p className="night-balance-sub"><i className="night-live-dot" aria-hidden="true"/>Source-aware winner calls · Five-second vote checks</p></div><a href="https://www.theguardian.com/us-news/ng-interactive/2026/nov/03/midterm-elections-full-results-senate-house-governor-races" target="_blank" rel="noreferrer">Full AP-powered results ↗</a></div>
+    {year===2026&&<section className="night-balance" aria-label="Election night source-attributed seat balance and winner reports">
+      <div className="night-balance-heading"><div><h2>2026 election night</h2><p className="night-balance-sub"><i className={"night-live-dot"+(!night||night.stale?" night-dot-delayed":"")} aria-hidden="true"/>{night?.stale?"Dated winner reports · not a live calls feed":"Source-aware winner calls · five-second vote checks"}</p></div><a href="https://www.theguardian.com/us-news/ng-interactive/2026/nov/03/midterm-elections-full-results-senate-house-governor-races" target="_blank" rel="noreferrer">Full AP-powered results ↗</a></div>
       <div className="night-chamber-tabs" role="group" aria-label="Election night office">
         {(["Senate","House","Governor"] as const).map(chamber=><button key={chamber} type="button" aria-pressed={nightTab===chamber} onClick={()=>setNightTab(chamber)}>{chamber}</button>)}
       </div>
@@ -278,13 +278,13 @@ export default function Home(){
         <div className="rep-fill" style={{width:nightTotals.rep/nightTotals.seats*100+"%"}}/>
       </div>
       <div className="night-summary-foot"><span>{nightTotals.demLeading} more D-leading</span><span>{nightTotals.independent?"Independent: "+nightTotals.independent+" · ":""}{Math.round(nightProgress)}% seats assigned or not up</span><span>{nightTotals.repLeading} more R-leading</span></div></>:
-        <div className="night-alert">National called-seat totals cannot be verified from the connected source right now. No zeroes or forecast seat counts are substituted. See the named, attributed calls below and the linked AP-powered live results.</div>}
+        <div className="night-alert">National seat totals are not available from the connected sources. The winner cards below are a verified, partial list, not the complete election result. No zeroes, polls or projections are substituted. See the linked AP-powered live results for the nationwide balance.</div>}
       <p className="night-source">Source: <a href={night?.sourceUrl??"https://www.poliwave.com/us/live/midterms-2026"} target="_blank" rel="noreferrer">{night?.source??"Independent election-night results"}</a> · {night?.sourceUpdated??"Source check pending"} · {night?.stale?"Delayed / not synchronized live":"Source snapshot"}{nightChecked?" · Checked "+new Date(nightChecked).toLocaleTimeString():""}.</p>
       {nightError&&<p className="warning">Winner-source connection: {nightError}</p>}
       {night?.sourceUnavailable&&<p className="warning">Live automated winner feed is unavailable. The names below are dated, independently reported calls—not a continuously updated AP feed.</p>}
       <div className="night-winners">
         {nightCalls.slice(0,10).map((call,i)=><div className="night-winner" key={call.state+call.office+call.winner+i}>
-          <small>{call.state} · {call.office}</small>
+          <small>{call.state} · {call.office}{call.district?" · District "+Number(call.district):""}</small>
           <span className="candidate-party"><span className={"party-badge "+partyClass(call.party)}>{partyCode(call.party)}</span><strong>{call.winner}</strong></span>
           <span className="night-status">SOURCE-CALLED · NOT CERTIFIED</span>
           <a href={call.sourceUrl} target="_blank" rel="noreferrer" className="party-caption">{call.sourceLabel??night?.source??"Source"} · View report ↗</a>
