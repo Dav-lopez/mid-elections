@@ -206,3 +206,18 @@
   .close-alert .alert-row{line-height:1.45}
   .filters input{min-width:0}
 }
+
+/* Source freshness must not be represented by a green live pulse on delayed reports. */
+.night-live-dot.night-dot-delayed{background:#d99a29}
+.night-balance-sub{line-height:1.45}
+.night-winner a{overflow-wrap:anywhere;text-underline-offset:2px}
+.night-winner:focus-within{outline:2px solid #2563eb;outline-offset:2px}
+@media(max-width:600px){
+  .night-balance-heading{align-items:flex-start}
+  .night-balance-heading>a{font-size:12px;line-height:1.5}
+  .night-balance-heading>div{min-width:0}
+  .night-chamber-tabs button{touch-action:manipulation}
+  .night-winners{max-width:100%}
+  .night-winner{min-width:0}
+  .night-winner .candidate-party{min-width:0;overflow-wrap:anywhere}
+}
