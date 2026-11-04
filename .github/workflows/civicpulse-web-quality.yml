@@ -27,7 +27,7 @@ jobs:
           node-version: "22"
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Reported-result regression tests
+      - name: Probe civicAPI response contract (non-blocking)\n        run: node scripts/probe-civicapi.mjs\n      - name: Reported-result regression tests
         run: node --experimental-strip-types --test tests/*.test.mjs
       - name: TypeScript verification
         run: npx tsc --noEmit
