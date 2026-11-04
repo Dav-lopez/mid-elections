@@ -13,6 +13,10 @@ type CandidateSource = { authority: string; status: string; url: string };
 type DynamicRoster = { authority: string; sourceUrl: string; kind: "ballot" | "filing"; candidates: {n:string;p:string}[] };
 type WebContest = { seat:string; cands:Candidate[]; total:number|null; pct_in:number|null; called:false; winner:""; sourceUrl:string; updatedLabel:string|null };
 type WebSourceStatus = {authority:string;url:string;status:string;details:string};
+type NightOffice = "Senate"|"House"|"Governor";
+type NightTotal = {office:NightOffice;seats:number;called:number;dem:number;rep:number;independent?:number;demLeading:number;repLeading:number};
+type NightCall = {office:NightOffice;state:string;winner:string;party:string;sourceUrl:string;sourceLabel?:string};
+type NightResult = {source:string;sourceUrl:string;sourceUpdated:string;stale:boolean;sourceUnavailable?:boolean;headline:string;offices:Record<NightOffice,NightTotal>|null;calls:NightCall[]};
 const API = "/api/elections";
 const states = "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split(" ");
 // Coverage listed in the current public feed registry, not a statement about election-day turnout.
@@ -48,6 +52,10 @@ export default function Home(){
   const [webSourceChecked,setWebSourceChecked]=useState<string|null>(null);
   const [webSourceError,setWebSourceError]=useState("");
   const [webSourceStale,setWebSourceStale]=useState(false);
+  const [nightTab,setNightTab]=useState<NightOffice>("Senate");
+  const [night,setNight]=useState<NightResult|null>(null);
+  const [nightError,setNightError]=useState("");
+  const [nightChecked,setNightChecked]=useState<string|null>(null);
   useEffect(()=>{
     if(country!=="US"){setFeeds({});setErrors({});setBusy(false);return;}
     let cancelled=false;
@@ -141,6 +149,29 @@ export default function Home(){
     const timer=setInterval(()=>{if(document.visibilityState==="visible")void get();},180000);
     return ()=>{cancelled=true;clearInterval(timer);};
   },[country,year]);
+  useEffect(()=>{
+    if(country!=="US"||year!==2026)return;
+    let cancelled=false;
+    let pending=false;
+    const get=async()=>{
+      if(cancelled||pending)return;
+      pending=true;
+      try{
+        const response=await fetch("/api/election-night",{cache:"no-store"});
+        if(!response.ok)throw new Error("HTTP "+response.status);
+        const source:unknown=await response.json();
+        if(!source||typeof source!=="object")throw new Error("Unrecognized election-night response");
+        const data=source as NightResult;
+        if(!Array.isArray(data.calls)||!data.sourceUpdated||!data.sourceUrl)throw new Error("Invalid election-night result");
+        if(!cancelled){setNight(data);setNightError("");setNightChecked(new Date().toISOString());}
+      }catch(e){if(!cancelled)setNightError(e instanceof Error?e.message:"Could not retrieve election-night results");}
+      finally{pending=false;}
+    };
+    void get();
+    // Screen checks every five seconds elsewhere; race-call provider is polled once per minute.
+    const timer=setInterval(()=>{if(document.visibilityState==="visible")void get();},60000);
+    return ()=>{cancelled=true;clearInterval(timer);};
+  },[year,country]);
   const rows=useMemo(()=>{
     if(country!=="US")return [];
     const providerContests=Object.values(feeds).flatMap(f=>f&&f.year===year?Object.keys(f.races).map(key=>({office:f.office as Office,state:key.slice(0,2).toUpperCase(),key:key.replace(/-special$/i,"-SPECIAL")})):[]);
@@ -217,12 +248,46 @@ export default function Home(){
     return [[code,{name:clean(leader.n),party:partyCode(leader.p),seat:race.key,votes:leader.v}]];
   })) as Record<string,{name:string;party:string;seat:string;votes:number}>;
   const senateStatesReporting=Object.keys(senateLeadByState).length;
+  const nightTotals=night?.offices?.[nightTab]??null;
+  const nightCalls=night?.calls.filter(c=>c.office===nightTab&&(state==="All"||states.some(code=>code===state && c.state===({
+    AL:"Alabama",AK:"Alaska",AZ:"Arizona",AR:"Arkansas",CA:"California",CO:"Colorado",CT:"Connecticut",DE:"Delaware",FL:"Florida",GA:"Georgia",HI:"Hawaii",ID:"Idaho",IL:"Illinois",IN:"Indiana",IA:"Iowa",KS:"Kansas",KY:"Kentucky",LA:"Louisiana",ME:"Maine",MD:"Maryland",MA:"Massachusetts",MI:"Michigan",MN:"Minnesota",MS:"Mississippi",MO:"Missouri",MT:"Montana",NE:"Nebraska",NV:"Nevada",NH:"New Hampshire",NJ:"New Jersey",NM:"New Mexico",NY:"New York",NC:"North Carolina",ND:"North Dakota",OH:"Ohio",OK:"Oklahoma",OR:"Oregon",PA:"Pennsylvania",RI:"Rhode Island",SC:"South Carolina",SD:"South Dakota",TN:"Tennessee",TX:"Texas",UT:"Utah",VT:"Vermont",VA:"Virginia",WA:"Washington",WV:"West Virginia",WI:"Wisconsin",WY:"Wyoming"} as Record<string,string>)[code]))))??[];
+  const nightProgress=nightTotals?Math.max(0,Math.min(100,(nightTotals.dem+nightTotals.rep+(nightTotals.independent??0))/nightTotals.seats*100)):0;
   const dataPublished = reported>0;
   return <main className="dashboard">
     <header className="hero"><div className="eyebrow">CIVICPULSE · SOURCE-AWARE ELECTION INFORMATION</div><h1>Election Results Dashboard</h1><p>Official-source reporting where available. No forecasts, invented totals, or inferred winners.</p><div className="topline"><span>{country==="US"?"United States":"Nigeria"}</span><span>{country==="US"?year:2027} election coverage</span><span>{feedStatus}</span></div></header>
     <div className="controls"><label>Country<select value={country} onChange={e=>{setCountry(e.target.value as "US"|"NG");setState("All")}}><option value="US">United States</option><option value="NG">Nigeria</option></select></label><label>Election<select value={country==="US"?year:2027} disabled={country==="NG"} onChange={e=>setYear(Number(e.target.value))}><option value={2026}>2026 Congressional</option><option value={2024}>2024 Historical replay</option></select></label><button onClick={()=>setRefresh(v=>v+1)} disabled={busy||country!=="US"}>{busy?"Checking source…":"Refresh source"}</button></div>
     {country==="US"&&<div className="refresh-status" role="status"><i className="dot" aria-hidden="true"/> Auto-check every 5 seconds while this tab is visible · Provider snapshot refresh is cached for 30 seconds · Last check: {checked?new Date(checked).toLocaleTimeString():"Pending"}{busy?" · Fetching…":""}</div>}
     {country==="NG"?<section className="notice"><h2>Nigeria 2027 · Integration pending</h2><p>INEC-backed election feeds and validated candidate rosters are not connected yet. No Nigerian vote totals are displayed.</p></section>:<>
+    {year===2026&&<section className="night-balance" aria-label="Live election night seat balance and declared winners">
+      <div className="night-balance-heading"><div><h2>2026 election night</h2><p className="night-balance-sub"><i className="night-live-dot" aria-hidden="true"/>Source-aware winner calls · Five-second vote checks</p></div><a href="https://www.theguardian.com/us-news/ng-interactive/2026/nov/03/midterm-elections-full-results-senate-house-governor-races" target="_blank" rel="noreferrer">Full AP-powered results ↗</a></div>
+      <div className="night-chamber-tabs" role="group" aria-label="Election night office">
+        {(["Senate","House","Governor"] as const).map(chamber=><button key={chamber} type="button" aria-pressed={nightTab===chamber} onClick={()=>setNightTab(chamber)}>{chamber}</button>)}
+      </div>
+      {nightTotals?<><div className="night-summary">
+        <div className="side dem"><span className="count">{nightTotals.dem}</span><span className="side-label">Democratic</span></div>
+        <div className="center"><strong>{nightTab==="House"?"218":nightTab==="Senate"?"51":"—"}</strong><span>{nightTab==="Governor"?"Nationwide governorships": "For majority"}<br/>{nightTotals.called} of {nightTab==="House"?435:nightTab==="Senate"?35:36} races called</span></div>
+        <div className="side rep"><span className="count">{nightTotals.rep}</span><span className="side-label">Republican</span></div>
+      </div>
+      <div className="night-bar" role="img" aria-label={nightTotals.dem+" Democratic seats and "+nightTotals.rep+" Republican seats recorded by "+night.source}>
+        <div className="dem-fill" style={{width:nightTotals.dem/nightTotals.seats*100+"%"}}/>
+        <div className="unfilled" />
+        <div className="rep-fill" style={{width:nightTotals.rep/nightTotals.seats*100+"%"}}/>
+      </div>
+      <div className="night-summary-foot"><span>{nightTotals.demLeading} more D-leading</span><span>{nightTotals.independent?"Independent: "+nightTotals.independent+" · ":""}{Math.round(nightProgress)}% seats assigned or not up</span><span>{nightTotals.repLeading} more R-leading</span></div></>:
+        <div className="night-alert">National called-seat totals cannot be verified from the connected source right now. No zeroes or forecast seat counts are substituted. See the named, attributed calls below and the linked AP-powered live results.</div>}
+      <p className="night-source">Source: <a href={night?.sourceUrl??"https://www.poliwave.com/us/live/midterms-2026"} target="_blank" rel="noreferrer">{night?.source??"Independent election-night results"}</a> · {night?.sourceUpdated??"Source check pending"} · {night?.stale?"Delayed / not synchronized live":"Source snapshot"}{nightChecked?" · Checked "+new Date(nightChecked).toLocaleTimeString():""}.</p>
+      {nightError&&<p className="warning">Winner-source connection: {nightError}</p>}
+      {night?.sourceUnavailable&&<p className="warning">Live automated winner feed is unavailable. The names below are dated, independently reported calls—not a continuously updated AP feed.</p>}
+      <div className="night-winners">
+        {nightCalls.slice(0,10).map((call,i)=><div className="night-winner" key={call.state+call.office+call.winner+i}>
+          <small>{call.state} · {call.office}</small>
+          <span className="candidate-party"><span className={"party-badge "+partyClass(call.party)}>{partyCode(call.party)}</span><strong>{call.winner}</strong></span>
+          <span className="night-status">SOURCE-CALLED · NOT CERTIFIED</span>
+          <a href={call.sourceUrl} target="_blank" rel="noreferrer" className="party-caption">{call.sourceLabel??night?.source??"Source"} · View report ↗</a>
+        </div>)}
+        {nightCalls.length===0&&<p className="muted">No named calls available for this office and state from the connected sources. <a target="_blank" rel="noreferrer" href="https://www.theguardian.com/us-news/ng-interactive/2026/nov/03/midterm-elections-full-results-senate-house-governor-races">Review the live AP-powered results</a>.</p>}
+      </div>
+    </section>}
     <section className="metrics"><article><span>Tracked contests</span><strong>{rows.length.toLocaleString()}</strong></article><article><span>Listed by provider</span><strong>{listed.toLocaleString()}</strong></article><article><span>Contests with votes</span><strong>{reported.toLocaleString()}</strong></article><article><span>Feed status</span><strong className="feed-status-value">{feedStatus}</strong></article></section>
     <section className="notice"><strong>{year===2024?"Historical 2024 vote totals — not 2026 results.":"2026 general election · November 3, 2026"}</strong><p>Counts are displayed only when published by the source. Missing results are not zero. Precinct completion does not mean certification. A vote leader is not necessarily a winner.</p><p>Source: <a href="https://openamerica.io/elections/api/" target="_blank" rel="noreferrer">Open America election API, relaying state election-office counts</a>. Publisher timestamp: {Object.values(feeds).filter(f=>f?.year===year&&f.as_of).map(f=>f?.office+": "+new Date(f!.as_of!).toLocaleString()).join(" · ")||"Not published"}. Last checked: {checked?new Date(checked).toLocaleString():"Not checked"}.</p>{Object.entries(errors).map(([o,error])=><p className="warning" key={o}>{o}: source unavailable ({error}). Previously retrieved data may be stale.</p>)}</section>
     <section className="notice" aria-label="Results provider reporting status">
