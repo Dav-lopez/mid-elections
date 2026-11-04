@@ -221,3 +221,18 @@
   .night-winner{min-width:0}
   .night-winner .candidate-party{min-width:0;overflow-wrap:anywhere}
 }
+
+/* The newsroom sample is not the national balance of power. */
+.night-partial{display:grid;gap:5px}
+.night-partial .night-bar{margin-bottom:9px}
+.night-partial .night-alert{border-left:3px solid #d99a29;color:#41576f;margin:4px 0 0}
+.night-partial .night-alert a{color:#075d8e}
+.show-more-calls{display:block;width:100%;margin:13px 0 0;border:1px solid #b7c9dd;border-radius:10px;background:#f0f5fc;color:#174b78;font-size:13px;font-weight:800;padding:12px 16px;cursor:pointer;min-height:44px}
+.show-more-calls:hover{background:#e3effb}
+.show-more-calls:focus-visible{outline:3px solid #f1ab36;outline-offset:2px}
+@media(max-width:600px){
+  .night-partial .night-summary{gap:4px}
+  .night-partial .night-summary .count{font-size:clamp(28px,9vw,40px)}
+  .night-partial .night-alert{font-size:12px}
+  .show-more-calls{font-size:14px}
+}
