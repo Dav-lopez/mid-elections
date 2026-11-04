@@ -272,7 +272,7 @@ export default function Home(){
         <div className="center"><strong>{nightTab==="House"?"218":nightTab==="Senate"?"51":"—"}</strong><span>{nightTab==="Governor"?"Nationwide governorships": "For majority"}<br/>{nightTotals.called} of {nightTab==="House"?435:nightTab==="Senate"?35:36} races called</span></div>
         <div className="side rep"><span className="count">{nightTotals.rep}</span><span className="side-label">Republican</span></div>
       </div>
-      <div className="night-bar" role="img" aria-label={nightTotals.dem+" Democratic seats and "+nightTotals.rep+" Republican seats recorded by "+night.source}>
+      <div className="night-bar" role="img" aria-label={nightTotals.dem+" Democratic seats and "+nightTotals.rep+" Republican seats recorded by "+(night?.source??"verified provider")}>
         <div className="dem-fill" style={{width:nightTotals.dem/nightTotals.seats*100+"%"}}/>
         <div className="unfilled" />
         <div className="rep-fill" style={{width:nightTotals.rep/nightTotals.seats*100+"%"}}/>
